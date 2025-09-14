@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, HTTPException
 
 from src.schemas import (
 	ForgetRequest,
@@ -10,14 +10,23 @@ from src.schemas import (
 	RetrieveItem,
 	RetrieveResponse,
 	StoreResponse,
+	StoreMemoryItem,
 	TranscriptRequest,
 )
 from src.dependencies.chroma import get_chroma_client
 from src.dependencies.redis_client import get_redis_client
 from src.config import get_openai_api_key, get_chroma_host, get_chroma_port
 import httpx
+from src.services.extraction import extract_from_transcript
 
 app = FastAPI(title="Agentic Memories API", version="0.1.0")
+
+
+@app.on_event("startup")
+def require_openai_key() -> None:
+	api_key = get_openai_api_key()
+	if api_key is None or (isinstance(api_key, str) and api_key.strip() == ""):
+		raise RuntimeError("OPENAI_API_KEY is required for server startup.")
 
 
 @app.get("/health")
@@ -73,8 +82,27 @@ def health_full() -> dict:
 
 @app.post("/v1/store", response_model=StoreResponse)
 def store_transcript(body: TranscriptRequest) -> StoreResponse:
-	# Stub: return mocked extraction result
-	return StoreResponse(memories_created=1, ids=["mem_01"], summary="Stub: extracted 1 memory")
+	# Guard: enforce OpenAI key presence (LLM-only extraction)
+	api_key = get_openai_api_key()
+	if api_key is None or (isinstance(api_key, str) and api_key.strip() == ""):
+		raise HTTPException(status_code=400, detail="OPENAI_API_KEY is required")
+	# Phase 2: Extract memories only (no persistence yet)
+	result = extract_from_transcript(body)
+	ids = [f"mem_tmp_{i+1:02d}" for i in range(len(result.memories))]
+	items = [
+		StoreMemoryItem(
+			id=ids[i],
+			content=m.content,
+			layer=m.layer,
+			type=m.type,
+			confidence=m.confidence,
+			ttl=m.ttl,
+			timestamp=m.timestamp,
+			metadata=m.metadata,
+		)
+		for i, m in enumerate(result.memories)
+	]
+	return StoreResponse(memories_created=len(ids), ids=ids, summary=result.summary, memories=items)
 
 
 @app.get("/v1/retrieve", response_model=RetrieveResponse)

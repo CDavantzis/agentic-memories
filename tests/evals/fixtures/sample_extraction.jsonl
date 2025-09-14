@@ -1,0 +1,4 @@
+{"user_id":"u1","history":[{"role":"user","content":"I love sci-fi books."}],"gold":[{"content":"User loves sci-fi books.","type":"explicit","layer":"semantic","tags":["behavior","personal"]}]}
+{"user_id":"u2","history":[{"role":"user","content":"Right now I'm anxious about deadlines and running 3 times a week."}],"gold":[{"content":"User is anxious about deadlines.","type":"implicit","layer":"short-term","tags":["emotion"]},{"content":"User runs 3 times a week.","type":"explicit","layer":"semantic","tags":["behavior","habits"]}]}
+{"user_id":"u3","history":[{"role":"user","content":"Planning a vacation to Japan next month; need to book flights and hotels."}],"gold":[{"content":"User is planning a vacation to Japan next month.","type":"explicit","layer":"semantic","tags":["project","travel"]},{"content":"User needs to book flights and hotels.","type":"explicit","layer":"short-term","tags":["task","next_action"]}]}
+

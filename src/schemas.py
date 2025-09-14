@@ -17,10 +17,22 @@ class TranscriptRequest(BaseModel):
 	metadata: Optional[dict[str, Any]] = None
 
 
+class StoreMemoryItem(BaseModel):
+	id: str
+	content: str
+	layer: Literal["short-term", "semantic", "long-term"]
+	type: Literal["explicit", "implicit"]
+	confidence: float
+	ttl: Optional[int] = None
+	timestamp: Optional[datetime] = None
+	metadata: Optional[dict[str, Any]] = None
+
+
 class StoreResponse(BaseModel):
 	memories_created: int
 	ids: List[str]
 	summary: Optional[str] = None
+	memories: Optional[List[StoreMemoryItem]] = None
 
 
 class RetrieveItem(BaseModel):

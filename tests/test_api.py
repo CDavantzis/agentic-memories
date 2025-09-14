@@ -6,16 +6,19 @@ from src.app import app
 client = TestClient(app)
 
 
-def test_store_stub():
+
+def test_store_stub(monkeypatch):
+	# With LLM-only pipeline and no key, expect zero memories
+	monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 	payload = {
 		"user_id": "user-123",
 		"history": [{"role": "user", "content": "I love sci-fi books."}],
 	}
 	resp = client.post("/v1/store", json=payload)
-	assert resp.status_code == 200
+	assert resp.status_code == 400
 	data = resp.json()
-	assert data["memories_created"] >= 1
-	assert isinstance(data["ids"], list)
+	assert data["detail"] == "OPENAI_API_KEY is required"
+	assert "ids" not in data
 
 
 def test_retrieve_stub():

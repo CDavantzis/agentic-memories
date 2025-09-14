@@ -29,3 +29,100 @@ def get_chroma_port() -> int:
 @lru_cache(maxsize=1)
 def get_redis_url() -> Optional[str]:
 	return os.getenv("REDIS_URL")
+
+
+# =============================
+# Extraction-related settings
+# =============================
+
+
+@lru_cache(maxsize=1)
+def get_extraction_model_name() -> str:
+	return os.getenv("EXTRACTION_MODEL", "gpt-4o")
+
+
+@lru_cache(maxsize=1)
+def get_embedding_model_name() -> str:
+	return os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")
+
+
+@lru_cache(maxsize=1)
+def get_aggressive_mode() -> bool:
+	return os.getenv("EXTRACTION_AGGRESSIVE", "true").lower() in {"1", "true", "yes", "on"}
+
+
+@lru_cache(maxsize=1)
+def get_worthy_threshold() -> float:
+	default_val = 0.35 if get_aggressive_mode() else 0.55
+	try:
+		return float(os.getenv("WORTHY_THRESHOLD", str(default_val)))
+	except ValueError:
+		return default_val
+
+
+@lru_cache(maxsize=1)
+def get_type_threshold() -> float:
+	try:
+		return float(os.getenv("TYPE_THRESHOLD", "0.5"))
+	except ValueError:
+		return 0.5
+
+
+@lru_cache(maxsize=1)
+def get_layer_threshold() -> float:
+	try:
+		return float(os.getenv("LAYER_THRESHOLD", "0.5"))
+	except ValueError:
+		return 0.5
+
+
+@lru_cache(maxsize=1)
+def get_default_short_term_ttl_seconds() -> int:
+	try:
+		return int(os.getenv("SHORT_TERM_TTL_SECONDS", "3600"))
+	except ValueError:
+		return 3600
+
+
+@lru_cache(maxsize=1)
+def get_default_next_action_ttl_hours() -> int:
+	try:
+		return int(os.getenv("NEXT_ACTION_TTL_HOURS", "48"))
+	except ValueError:
+		return 48
+
+
+@lru_cache(maxsize=1)
+def get_max_memories_per_request() -> int:
+	try:
+		return int(os.getenv("MAX_MEMORIES_PER_REQUEST", "10"))
+	except ValueError:
+		return 10
+
+
+@lru_cache(maxsize=1)
+def get_extraction_timeouts_ms() -> int:
+	try:
+		return int(os.getenv("EXTRACTION_TIMEOUT_MS", "8000"))
+	except ValueError:
+		return 8000
+
+
+@lru_cache(maxsize=1)
+def get_extraction_retries() -> int:
+	try:
+		return int(os.getenv("EXTRACTION_RETRIES", "1"))
+	except ValueError:
+		return 1
+
+
+@lru_cache(maxsize=1)
+def get_heuristic_only_mode() -> bool:
+	return os.getenv("EXTRACTION_HEURISTIC_ONLY", "false").lower() in {"1", "true", "yes", "on"}
+
+
+@lru_cache(maxsize=1)
+def get_disable_heuristics() -> bool:
+	# When true, heuristic extraction is hard-disabled (used to force LLM-only).
+	# Tests can override via env to re-enable heuristics.
+	return os.getenv("EXTRACTION_DISABLE_HEURISTICS", "true").lower() in {"1", "true", "yes", "on"}

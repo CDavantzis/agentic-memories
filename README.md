@@ -40,7 +40,12 @@ pip install -r requirements.txt
 - ChromaDB server at `http://localhost:8000`
 - (Optional) Redis at `redis://localhost:6379/0`
 
-4) Run the API
+4) Set OpenAI API key (required)
+```bash
+export OPENAI_API_KEY=YOUR_REAL_KEY
+```
+
+5) Run the API
 ```bash
 uvicorn src.app:app --reload --host 0.0.0.0 --port 8080
 ```
@@ -72,6 +77,11 @@ Stateless AI agents easily lose context across sessions. This project introduces
 - Retrieval: Semantic search (embeddings + cosine) with keyword fallback; filters by `user_id`, `layer`, `type`; increments `usage_count`; Redis cache for short‑term (optional).
 - Forgetting: Time‑based expiration, promotion (short→long summarization), compaction (cluster + summarize), implicit pattern pruning.
 - Interfaces: FastAPI REST endpoints + MCP tools.
+
+Phase 2 extraction pipeline (LLM-only) now uses a LangGraph state machine:
+- Nodes: worthiness → extraction → end
+- Worthiness: classify if memory-worthy (aggressive recall allowed)
+- Extraction: produce atomic memories with tags and metadata; we normalize outputs (prefix "User ", present tense, preserve temporal phrases) and derive a `next_action` memory when a project provides one.
 
 ChromaDB client example (HTTP server on localhost:8000):
 ```python
@@ -459,7 +469,7 @@ services:
 
 ## Progress Tracker
 - [x] Phase 1 — Project Setup & Models
-- [ ] Phase 2 — Extraction Engine
+- [x] Phase 2 — Extraction Engine
 - [ ] Phase 3 — Storage & Retrieval
 - [ ] Phase 4 — Auth & Interfaces
 - [ ] Phase 5 — Forgetting & Maintenance
@@ -487,6 +497,19 @@ docker compose up -d --build
 ```
 API: http://localhost:8080. ChromaDB: `http://${CHROMA_HOST:-127.0.0.1}:${CHROMA_PORT:-8000}` (external).
 
+#### Quick curl checks
+```bash
+# Preference
+curl -s -X POST http://localhost:8080/v1/store \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"user-123","history":[{"role":"user","content":"I love sci-fi books."}]}' | jq .
+
+# Project + next action + learning
+curl -s -X POST http://localhost:8080/v1/store \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"user-456","history":[{"role":"user","content":"Planning a vacation to Japan next month; need to book flights and hotels. I’m trying to get better at Figma."}]}' | jq .
+```
+
 ### CI Notes
 - GitHub Actions workflow at `.github/workflows/ci.yml`:
   - Installs dependencies, runs tests (`pytest`), and builds the Docker image.
@@ -511,6 +534,10 @@ API: http://localhost:8080. ChromaDB: `http://${CHROMA_HOST:-127.0.0.1}:${CHROMA
 - 2025-09-13: Added comprehensive `GET /health/full` (env, ChromaDB, Redis checks) and tests.
 
 - 2025-09-14: Docker updates for external ChromaDB: added `restart: unless-stopped`, removed Chroma service, kept Redis, and introduced `run_docker.sh` (interactive `.env` creation with defaults, host IP auto-detection for `CHROMA_HOST`, compose up/build).
+
+- 2025-09-14: Phase 2 started. Added `src/services/extraction.py` with heuristic explicit/implicit detection, layer assignment with TTL for short-term, and embeddings (OpenAI when configured, deterministic fallback otherwise). Wired `/v1/store` to call extractor and return counts/ids/summary. Added tests (`tests/test_extraction.py`), updated Dockerfile to include tests and `PYTHONPATH`, ensured imports work in container. All tests passing.
+
+- 2025-09-14: Phase 2 upgrade to LLM-only with LangGraph. Removed heuristic path; added strict prompts (worthiness/typing/extraction), normalization (prefix "User ", present tense, temporal retention), derived `next_action` memory, eval harness smoke passing. Added `src/services/graph_extraction.py` and `src/services/extract_utils.py`. `OPENAI_API_KEY` now required at startup and for `/v1/store`.
 
  
 ### ChromaDB Host Configuration
