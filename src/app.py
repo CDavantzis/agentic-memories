@@ -31,7 +31,8 @@ def health_full() -> dict:
 
 	# Env check
 	required_envs = ["OPENAI_API_KEY"]
-	missing_envs = [k for k in required_envs if (get_openai_api_key() is None and k == "OPENAI_API_KEY")]
+	openai_key = get_openai_api_key()
+	missing_envs = [k for k in required_envs if (openai_key is None or openai_key.strip() == "")]
 	checks["env"] = {"required": required_envs, "missing": missing_envs}
 
 	# ChromaDB check (active heartbeat)
