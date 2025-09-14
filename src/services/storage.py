@@ -1,0 +1,90 @@
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+
+import time
+import uuid
+import json
+
+from src.dependencies.chroma import get_chroma_client
+from src.models import Memory
+
+
+COLLECTION_NAME = "memories"
+
+
+def init_chroma_collection(name: str = COLLECTION_NAME) -> Any:
+	client = get_chroma_client()
+	if client is None:
+		raise RuntimeError("Chroma client not available")
+	# V2 client exposes get_or_create_collection; avoid legacy create_collection
+	return client.get_or_create_collection(name)  # type: ignore[attr-defined]
+
+
+def _ttl_epoch_from_ttl(ttl_seconds: Optional[int]) -> Optional[int]:
+	if ttl_seconds is None:
+		return None
+	return int(time.time()) + int(ttl_seconds)
+
+
+def _build_metadata(memory: Memory) -> Dict[str, Any]:
+	meta: Dict[str, Any] = {
+		"user_id": memory.user_id,
+		"layer": memory.layer,
+		"type": memory.type,
+		"timestamp": memory.timestamp.isoformat(),
+		"confidence": memory.confidence,
+		"relevance_score": memory.relevance_score,
+		"usage_count": memory.usage_count,
+		"tags": json.dumps(memory.metadata.get("tags", [])),  # Serialize list to string
+	}
+	if memory.ttl is not None:
+		meta["ttl_epoch"] = _ttl_epoch_from_ttl(memory.ttl)
+	# Pass-through structured fields where present
+	for key in ("project", "relationship", "learning_journal"):
+		if key in memory.metadata:
+			if isinstance(memory.metadata[key], (list, dict)):
+				meta[key] = json.dumps(memory.metadata[key])  # Serialize if non-scalar
+			else:
+				meta[key] = memory.metadata[key]
+	return meta
+
+
+def upsert_memories(user_id: str, memories: List[Memory]) -> List[str]:
+	if not memories:
+		return []
+	for m in memories:
+		if m.user_id != user_id:
+			raise ValueError("user_id mismatch in memories")
+
+	ids: List[str] = []
+	documents: List[str] = []
+	embeddings: List[List[float]] = []
+	metadatas: List[Dict[str, Any]] = []
+
+	for m in memories:
+		mem_id = m.id or f"mem_{uuid.uuid4().hex[:12]}"
+		ids.append(mem_id)
+		documents.append(m.content)
+		embeddings.append(m.embedding or [])
+		metadatas.append(_build_metadata(m))
+
+	# Use a collection name that encodes the embedding dimension to avoid mismatch
+	dim = len(embeddings[0]) if embeddings and embeddings[0] else 0
+	collection_name = f"{COLLECTION_NAME}_{dim}" if dim > 0 else COLLECTION_NAME
+	collection = init_chroma_collection(collection_name)
+
+	# Chroma upsert
+	collection.upsert(ids=ids, documents=documents, embeddings=embeddings, metadatas=metadatas)  # type: ignore[attr-defined]
+	return ids
+
+
+def increment_usage_count(ids: List[str]) -> None:
+	# Optionally: implement as metadata updates in Chroma if supported by client, else no-op placeholder
+	try:
+		# We don't know the dimension here; skip increment to avoid collection mismatch complexities
+		return
+	except Exception:
+		return
+
+

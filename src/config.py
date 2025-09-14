@@ -27,6 +27,16 @@ def get_chroma_port() -> int:
 
 
 @lru_cache(maxsize=1)
+def get_chroma_tenant() -> str:
+	return os.getenv("CHROMA_TENANT", "default_tenant")
+
+
+@lru_cache(maxsize=1)
+def get_chroma_database() -> str:
+	return os.getenv("CHROMA_DATABASE", "default_database")
+
+
+@lru_cache(maxsize=1)
 def get_redis_url() -> Optional[str]:
 	return os.getenv("REDIS_URL")
 

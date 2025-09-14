@@ -13,6 +13,71 @@ from src.config import get_extraction_model_name, get_extraction_retries, get_ex
 EXTRACTION_MODEL = get_extraction_model_name()
 
 
+def _parse_json_from_text(text: str, expect_array: bool) -> Any:
+	"""Best-effort parse JSON from LLM text.
+
+	Handles code fences (```json ... ```), leading/trailing prose, and extracts the
+	first complete JSON object/array if needed. Falls back to [] or {}.
+	"""
+	if not text or text.strip() == "":
+		return [] if expect_array else {}
+
+	candidate = text.strip()
+
+	# 1) Strip code fences if present
+	code_block = re.search(r"```(?:json)?\s*([\s\S]+?)```", candidate, re.IGNORECASE)
+	if code_block:
+		candidate = code_block.group(1).strip()
+
+	# 2) Try direct parse
+	try:
+		parsed = json.loads(candidate)
+		# Coerce to expected container shape
+		if expect_array:
+			if isinstance(parsed, list):
+				return parsed
+			if isinstance(parsed, dict):
+				if isinstance(parsed.get("items"), list):
+					return parsed["items"]
+				# As a last resort, if dict values look like items, return list(values)
+				vals = list(parsed.values())
+				return vals if vals else []
+			return []
+		return parsed
+	except Exception:
+		pass
+
+	# 3) Extract bracketed JSON region (array preferred when expect_array)
+	if expect_array and "[" in candidate and "]" in candidate:
+		start = candidate.find("[")
+		end = candidate.rfind("]")
+		if start != -1 and end != -1 and end > start:
+			frag = candidate[start : end + 1]
+			try:
+				parsed = json.loads(frag)
+				if expect_array:
+					return parsed if isinstance(parsed, list) else []
+				return parsed
+			except Exception:
+				pass
+
+	if "{" in candidate and "}" in candidate:
+		start = candidate.find("{")
+		end = candidate.rfind("}")
+		if start != -1 and end != -1 and end > start:
+			frag = candidate[start : end + 1]
+			try:
+				parsed = json.loads(frag)
+				if expect_array:
+					return parsed if isinstance(parsed, list) else []
+				return parsed
+			except Exception:
+				pass
+
+	# 4) Fallback: empty structure to avoid hard failure in pipeline
+	return [] if expect_array else {}
+
+
 def _call_llm_json(system_prompt: str, user_payload: Dict[str, Any], *, expect_array: bool = False) -> Optional[Any]:
 	logger = logging.getLogger("extraction")
 	api_key = os.getenv("OPENAI_API_KEY")
@@ -44,7 +109,7 @@ def _call_llm_json(system_prompt: str, user_payload: Dict[str, Any], *, expect_a
 					json.dumps(user_payload)[:1000],
 					text[:1000],
 				)
-				return json.loads(text)
+				return _parse_json_from_text(text, expect_array)
 			except Exception as exc:  # retry
 				last_exc = exc
 				continue

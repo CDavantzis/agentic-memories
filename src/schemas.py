@@ -70,3 +70,23 @@ class MaintenanceResponse(BaseModel):
 	status: Literal["running", "queued"] = "running"
 	started_at: datetime = Field(default_factory=datetime.utcnow)
 
+
+# Structured retrieval
+class StructuredRetrieveRequest(BaseModel):
+	user_id: str
+	query: Optional[str] = None
+	limit: int = Field(default=50, ge=1, le=100)
+
+
+class StructuredRetrieveResponse(BaseModel):
+	emotions: List[RetrieveItem] = Field(default_factory=list)
+	behaviors: List[RetrieveItem] = Field(default_factory=list)
+	personal: List[RetrieveItem] = Field(default_factory=list)
+	professional: List[RetrieveItem] = Field(default_factory=list)
+	habits: List[RetrieveItem] = Field(default_factory=list)
+	skills_tools: List[RetrieveItem] = Field(default_factory=list)
+	projects: List[RetrieveItem] = Field(default_factory=list)
+	relationships: List[RetrieveItem] = Field(default_factory=list)
+	learning_journal: List[RetrieveItem] = Field(default_factory=list)
+	other: List[RetrieveItem] = Field(default_factory=list)
+

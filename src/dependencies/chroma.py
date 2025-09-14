@@ -1,47 +1,188 @@
 import os
-from typing import Any
+import json
+from typing import Any, Dict, Optional
 
-from src.config import get_chroma_host, get_chroma_port
-
-try:
-	from chromadb import HttpClient, Client  # type: ignore
-	exists_httpclient = True
+# Workaround for ChromaDB 0.5.3 v1 API limitation
+# Create a custom client that bypasses tenant validation
+try:  # pragma: no cover
+	from chromadb import HttpClient  # type: ignore
+	from chromadb.api.client import Client  # type: ignore
+	from chromadb.config import Settings  # type: ignore
 except Exception:  # pragma: no cover
 	HttpClient = None  # type: ignore
 	Client = None  # type: ignore
-	exists_httpclient = False
+	Settings = None  # type: ignore
+
+
+def _env_bool(name: str, default: str = "false") -> bool:
+	val = os.getenv(name, default).strip().lower()
+	return val in {"1", "true", "yes", "on"}
+
+
+def _load_headers() -> Optional[Dict[str, str]]:
+	# Prefer explicit JSON headers
+	raw = os.getenv("CHROMA_HEADERS")
+	if raw:
+		try:
+			parsed = json.loads(raw)
+			return parsed if isinstance(parsed, dict) else None
+		except Exception:
+			return None
+	# Fallback: Authorization from CHROMA_API_KEY
+	api_key = os.getenv("CHROMA_API_KEY")
+	if api_key and api_key.strip():
+		return {"Authorization": f"Bearer {api_key.strip()}"}
+	return None
+
+
+class V2ChromaClient:
+	"""Custom Chroma client that works with v2 APIs by bypassing tenant validation."""
+	
+	def __init__(self, host: str, port: int, tenant: str, database: str, ssl: bool = False, headers: Optional[Dict[str, str]] = None):
+		self.host = host
+		self.port = port
+		self.tenant = tenant
+		self.database = database
+		self.ssl = ssl
+		self.headers = headers or {}
+		self._base_url = f"{'https' if ssl else 'http'}://{host}:{port}/api/v2"
+		self._collections = {}  # Cache for collections
+	
+	def _make_request(self, method: str, endpoint: str, json_data: Optional[Dict] = None):
+		"""Make HTTP request to v2 API."""
+		import httpx
+		url = f"{self._base_url}{endpoint}"
+		headers = {**self.headers, "Content-Type": "application/json"}
+		
+		try:
+			with httpx.Client(timeout=10.0) as client:
+				if method.upper() == "GET":
+					resp = client.get(url, headers=headers)
+				elif method.upper() == "POST":
+					resp = client.post(url, headers=headers, json=json_data)
+				elif method.upper() == "PUT":
+					resp = client.put(url, headers=headers, json=json_data)
+				else:
+					raise ValueError(f"Unsupported method: {method}")
+				
+				resp.raise_for_status()
+				return resp.json() if resp.content else {}
+		except Exception as e:
+			# Include response text for debugging
+			if hasattr(e, 'response') and e.response:
+				error_text = e.response.text
+				raise Exception(f"API request failed: {e} - Response: {error_text}")
+			raise Exception(f"API request failed: {e}")
+	
+	def heartbeat(self):
+		"""Call heartbeat via v2 API."""
+		return self._make_request("GET", "/heartbeat")
+	
+	def get_or_create_collection(self, name: str):
+		"""Get or create collection using v2 API."""
+		# Check if collection exists
+		try:
+			collections = self._make_request("GET", f"/tenants/{self.tenant}/databases/{self.database}/collections")
+			for col in collections:
+				if col.get("name") == name:
+					return V2Collection(self, name, col.get("id"))
+		except Exception:
+			pass
+		
+		# Create collection if it doesn't exist (metadata cannot be empty)
+		create_data = {
+			"name": name,
+			"metadata": {"created_by": "agentic-memories"}
+		}
+		result = self._make_request("POST", f"/tenants/{self.tenant}/databases/{self.database}/collections", create_data)
+		collection_id = result.get("id")
+		return V2Collection(self, name, collection_id)
+	
+	def get_collection(self, name: str):
+		"""Get collection using v2 API."""
+		collections = self._make_request("GET", f"/tenants/{self.tenant}/databases/{self.database}/collections")
+		for col in collections:
+			if col.get("name") == name:
+				return V2Collection(self, name, col.get("id"))
+		raise ValueError(f"Collection {name} not found")
+	
+	def list_collections(self):
+		"""List collections using v2 API."""
+		result = self._make_request("GET", f"/tenants/{self.tenant}/databases/{self.database}/collections")
+		return [V2Collection(self, col.get("name"), col.get("id")) for col in result]
+
+
+class V2Collection:
+	"""Minimal collection wrapper for v2 API."""
+	
+	def __init__(self, client: V2ChromaClient, name: str, collection_id: str):
+		self.client = client
+		self.name = name
+		self.id = collection_id
+		self._endpoint_base = f"/tenants/{client.tenant}/databases/{client.database}/collections/{collection_id}"
+	
+	def upsert(self, ids: list, documents: list, embeddings: list, metadatas: list):
+		"""Upsert documents to collection."""
+		# Coerce metadata values to scalars (v2 requires scalar values). Lists/dicts -> JSON strings.
+		coerced_metadatas = []
+		for md in metadatas or []:
+			fixed = {}
+			for k, v in (md or {}).items():
+				if isinstance(v, (list, dict)):
+					fixed[k] = json.dumps(v)
+				else:
+					fixed[k] = v
+			coerced_metadatas.append(fixed)
+		data = {
+			"ids": ids,
+			"documents": documents,
+			"embeddings": embeddings,
+			"metadatas": coerced_metadatas
+		}
+		return self.client._make_request("POST", f"{self._endpoint_base}/upsert", data)
+	
+	def query(self, query_texts: list = None, query_embeddings: list = None, n_results: int = 10, where: Optional[Dict] = None):
+		"""Query collection.
+		Supports either query_texts (if server embeds) or query_embeddings (preferred)."""
+		data: Dict[str, Any] = {
+			"n_results": n_results,
+			"where": where or {},
+		}
+		if query_embeddings is not None:
+			data["query_embeddings"] = query_embeddings
+		elif query_texts is not None:
+			data["query_texts"] = query_texts
+		else:
+			raise ValueError("Either query_embeddings or query_texts must be provided")
+		return self.client._make_request("POST", f"{self._endpoint_base}/query", data)
 
 
 def get_chroma_client() -> Any:
-	"""Create and return a ChromaDB HTTP client using environment variables.
-
-	Environment:
-	- CHROMA_HOST (default: localhost)
-	- CHROMA_PORT (default: 8000)
+	"""Create a Chroma v2 client that works with v2-only servers.
+	
+	Workaround for ChromaDB 0.5.3 v1 API limitation.
 	"""
-	host = get_chroma_host()
-	port = get_chroma_port()
+	if Client is None or Settings is None:
+		return None
 
-	# Prefer HttpClient(host=..., port=...) if available
-	if exists_httpclient and HttpClient is not None:
-		try:
-			return HttpClient(host=host, port=port)  # newer signature
-		except TypeError:
-			# Fall through to Settings-based Client
-			pass
-		except Exception:
-			# Fall through
-			pass
-
-	# Fallback to Settings-based REST client
+	host = os.getenv("CHROMA_HOST", "localhost")
 	try:
-		from chromadb.config import Settings  # type: ignore
-		return Client(
-			Settings(
-				chroma_api_impl="rest",
-				chroma_server_host=host,
-				chroma_server_http_port=port,
-			)
+		port = int(os.getenv("CHROMA_PORT", "8000"))
+	except ValueError:
+		port = 8000
+	tenant = os.getenv("CHROMA_TENANT", "default_tenant")
+	database = os.getenv("CHROMA_DATABASE", "default_database")
+	ssl = _env_bool("CHROMA_SSL", "false")
+	headers = _load_headers()
+
+	try:
+		return V2ChromaClient(
+			host=host,
+			port=port,
+			tenant=tenant,
+			database=database,
+			ssl=ssl,
+			headers=headers,
 		)
 	except Exception:
 		return None

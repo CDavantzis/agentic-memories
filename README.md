@@ -113,6 +113,7 @@ Pydantic `Memory` (planned):
 - `GET /health` — Liveness check
 - `POST /store` — Input: transcript JSON; runs extraction → storage
 - `GET /retrieve` — Query params: `query`, optional `layer`, `type`; returns ranked memories
+- `POST /retrieve/structured` — LLM-organized, category-based retrieval (emotions, behaviors, personal, professional, habits, skills_tools, projects, relationships, learning_journal, other)
 - `POST /forget` — Manually trigger pruning/expiration
 - `POST /maintenance` — Trigger scheduled jobs on demand
 
@@ -146,7 +147,7 @@ Copy-Item env.example .env
 cp env.example .env
 ```
 - Required: `OPENAI_API_KEY`
-- Optional: `CHROMA_HOST`, `CHROMA_PORT`, `REDIS_URL`
+- Optional: `CHROMA_HOST`, `CHROMA_PORT`, `REDIS_URL`, `CHROMA_TENANT`, `CHROMA_DATABASE`
 - The app auto-loads `.env` at startup.
 
 ### Configuration Wrapper
@@ -200,19 +201,54 @@ Deliverables: `services/extraction.py`; Unit tests with 10+ sample transcripts; 
 Cursor Prompt: "Implement a memory extraction service using OpenAI and LangChain. From a conversation transcript, extract explicit/implicit memories, assign to short-term/semantic/long-term layers, generate embeddings, and add TTL/scores (short TTL for short-term). Include tests."
 
 ### Phase 3: Storage and Retrieval Services (3-4 days)
-Objective: Enable persistent storage and efficient querying across hierarchies.
+Objective: Persist extracted memories to ChromaDB and retrieve efficiently with caching.
 
-Tasks:
-- Set up ChromaDB collections (unified with layer metadata; use filters for separation).
-- Storage: Upsert memories with metadata (user_id and layer enforced); persist short‑term in ChromaDB with TTL for later expiration.
-- Retrieval: Semantic search (cosine) with keyword fallback; Filter by user_id, layer, type; Increment usage_count; Cache short‑term results in Redis for speed.
-- Integrate Redis as cache layer for short‑term (sync with ChromaDB).
+Data model & schema:
+- Collection: `memories_3072` (standardized by embedding dimension)
+- Embedding model: `text-embedding-3-large` (3072 dims)
+- Document: `content`
+- IDs: `mem_<uuid>`
+- Metadata: `user_id`, `layer`, `type`, `timestamp`, `ttl_epoch?`, `confidence`, `relevance_score`, `usage_count`, `tags` (stored as JSON string), `project?`, `relationship?`, `learning_journal?`
 
-Dependencies: Phases 1-2.
+Services:
+- `services/storage.py`
+  - `init_chroma_collection(name)` using Chroma v2 HTTP APIs
+  - `upsert_memories(user_id, memories: List[Memory]) -> List[str]` (batch embeddings; compute `ttl_epoch` for short‑term)
+  - `increment_usage_count(ids: List[str])`
+- `services/retrieval.py`
+  - `search_memories(user_id, query, filters: {layer?, type?}, limit=10, offset=0)`
+    - Semantic search via query embeddings (local) + keyword fallback; hybrid scoring
+    - Filters by `user_id` (mandatory), optional `layer`/`type`; best‑effort tags filter (tags stored as JSON string)
+    - Pagination; optional Redis cache for short‑term
 
-Deliverables: `services/storage.py`, `services/retrieval.py`; Integration tests; <150ms retrieval latency.
+API wiring:
+- `POST /v1/store`: run extraction, persist to Chroma, return real IDs; bump user cache namespace
+- `GET /v1/retrieve`: query Chroma with query embeddings; apply filters; cache + paginate
+- `POST /v1/retrieve/structured`: LLM organizes candidate memories into predefined categories and returns structured sets
 
-Cursor Prompt: "Build storage and retrieval services with ChromaDB (localhost:8000) persisting all layers including short-term (with TTL metadata), and Redis as cache for short-term. Support hierarchical layers, user_id partitioning via metadata filters, and hybrid semantic/keyword search. Include usage tracking and cache sync."
+Performance targets:
+- Retrieve p95: <150ms warm, <400ms cold; Store p95: <800ms (5 memories)
+
+Observability:
+- Logs: user_id, request_id, latency, cache hit/miss; Metrics: store/retrieve latency, cache hit‑rate, avg results; Tracing around Chroma/Redis
+
+Testing:
+- Integration tests: multi‑user isolation; filters; pagination; short‑term TTL; cache hit/invalidations; hybrid search behavior
+
+Dependencies: Phases 1‑2.
+
+Deliverables: `services/storage.py`, `services/retrieval.py`; endpoint wiring; integration tests; perf smoke.
+
+Step-by-step implementation sequence:
+1) ChromaDB collection setup (v2)
+2) Upsert pipeline (store)
+3) Retrieval pipeline with query embeddings
+4) Usage tracking
+5) Redis cache (short‑term acceleration)
+6) Wire API endpoints
+7) Integration tests
+8) Observability & perf smoke
+9) Docs & examples
 
 ### Phase 4: User Identification and Interfaces (3-4 days)
 Objective: Secure multi-user support and expose APIs/MCP.
@@ -256,8 +292,6 @@ Tasks:
 Dependencies: All prior.
 
 Deliverables: Test suite; Dockerfile; README updates with run instructions.
-
-Cursor Prompt: "Add security middleware, full Pytest suite for multi-user isolation, short-term persistence, and forgetting logic. Optimize services and Dockerize the FastAPI app."
 
 ## Milestones and Timeline
 - MVP Milestone: End of Phase 4 (core store/retrieve working; short‑term persisted).
@@ -327,6 +361,21 @@ Cursor Prompt: "Add security middleware, full Pytest suite for multi-user isolat
 }
 ```
 
+### POST /v1/retrieve/structured
+- Purpose: Retrieve and organize memories into categories via LLM.
+- Request body:
+```json
+{"user_id":"user-123","query":"reading preferences","limit":50}
+```
+- Response body (keys always present):
+```json
+{
+  "emotions": [], "behaviors": [], "personal": [], "professional": [],
+  "habits": [], "skills_tools": [], "projects": [], "relationships": [],
+  "learning_journal": [], "other": [ { "id": "mem_01", "content": "...", ... } ]
+}
+```
+
 ### POST /v1/forget
 - Purpose: Trigger forgetting flows manually.
 - Request body:
@@ -358,14 +407,18 @@ curl -X POST http://localhost:8080/v1/store \
 
 curl "http://localhost:8080/v1/retrieve?query=sci-fi&limit=5" \
   -H "X-API-KEY: $API_KEY"
+
+curl -s -X POST http://localhost:8080/v1/retrieve/structured \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"user-123","query":"reading preferences"}'
 ```
 
 
 ## Storage & Retrieval Details
 
 ### ChromaDB Collections
-- Collection: `memories`
-- Embedding model: `text-embedding-3-small` (1536 dims)
+- Collection: `memories_3072` (standardized by embedding dimension)
+- Embedding model: `text-embedding-3-large` (3072 dims)
 - Document: `content`
 - IDs: `mem_<uuid>`
 - Metadata keys:
@@ -376,10 +429,12 @@ curl "http://localhost:8080/v1/retrieve?query=sci-fi&limit=5" \
   - `timestamp: iso8601`
   - `confidence: float`
   - `relevance_score: float`
+  - `usage_count: int`
+  - `tags: string (JSON-serialized list)`
 
 ### Indexing & Filters
 - Filter by `user_id` for isolation; combine with `layer`/`type` as needed.
-- Create secondary keyword index via stored metadata fields for fallback search.
+- Tags are stored as JSON string; filtering is best‑effort via `$contains` on the string.
 
 ### Ranking
 - Hybrid score = `0.8 * semantic_similarity + 0.2 * keyword_overlap`
@@ -442,6 +497,8 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - CHROMA_HOST=${CHROMA_HOST:-host.docker.internal}
       - CHROMA_PORT=${CHROMA_PORT:-8000}
+      - CHROMA_TENANT=${CHROMA_TENANT:-agentic-memories}
+      - CHROMA_DATABASE=${CHROMA_DATABASE:-memories}
       - REDIS_URL=redis://redis:6379/0
     ports:
       - "8080:8080"
@@ -470,7 +527,7 @@ services:
 ## Progress Tracker
 - [x] Phase 1 — Project Setup & Models
 - [x] Phase 2 — Extraction Engine
-- [ ] Phase 3 — Storage & Retrieval
+- [x] Phase 3 — Storage & Retrieval
 - [ ] Phase 4 — Auth & Interfaces
 - [ ] Phase 5 — Forgetting & Maintenance
 - [ ] Phase 6 — Security, Testing, Deployment
@@ -539,17 +596,11 @@ curl -s -X POST http://localhost:8080/v1/store \
 
 - 2025-09-14: Phase 2 upgrade to LLM-only with LangGraph. Removed heuristic path; added strict prompts (worthiness/typing/extraction), normalization (prefix "User ", present tense, temporal retention), derived `next_action` memory, eval harness smoke passing. Added `src/services/graph_extraction.py` and `src/services/extract_utils.py`. `OPENAI_API_KEY` now required at startup and for `/v1/store`.
 
- 
+- 2025-09-14: Phase 3 – Storage/Retrieval upgraded to Chroma v2 HTTP. Standardized collection per embedding dimension (`memories_3072`), serialized complex metadata (e.g., tags) as JSON strings, switched retrieval to local query embeddings, and added an LLM-powered structured retrieval endpoint `/v1/retrieve/structured`. Created tenant/database via v2 where required.
+
 ### ChromaDB Host Configuration
 - Set `CHROMA_HOST` and `CHROMA_PORT` for your environment.
-  - Example (remote host):
-    - PowerShell: `$env:CHROMA_HOST='192.168.1.220'; $env:CHROMA_PORT='8000'`
-    - bash: `export CHROMA_HOST=192.168.1.220 CHROMA_PORT=8000`
-  - Compose picks these up (defaults to `host.docker.internal:8000` if not set).
-
-### Chroma Health Check Notes
+- If using Chroma v2 multi-tenancy, also set `CHROMA_TENANT` and `CHROMA_DATABASE` (ensure both exist on the server).
 - The app checks Chroma connectivity via `GET /api/v2/heartbeat`.
-- Ensure your Chroma server supports v2 APIs. Older servers may return 410 on `/api/v1/heartbeat`.
-- Configure `CHROMA_HOST` and `CHROMA_PORT` per environment (can be an IP like `192.168.1.220`).
 
  
