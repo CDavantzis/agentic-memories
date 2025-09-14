@@ -22,7 +22,7 @@ from src.config import (
 )
 from src.services.prompts import WORTHINESS_PROMPT, TYPING_PROMPT, EXTRACTION_PROMPT
 from src.services.graph_extraction import run_extraction_graph
-from src.services.extract_utils import _call_llm_json, _normalize_llm_content
+from src.services.extract_utils import _call_llm_json
 
 
 # Defaults for Phase 2
@@ -171,10 +171,9 @@ def extract_from_transcript(request: TranscriptRequest) -> ExtractionResult:
 
 	if extracted_items:
 		max_items = max(1, get_max_memories_per_request())
-		# Build last user message text for normalization context
-		last_user_text = next((m.content for m in reversed(request.history) if m.role == "user"), "")
 		for item in extracted_items[:max_items]:
-			content = _normalize_llm_content(str(item.get("content", "")).strip(), last_user_text)
+			# LLM now handles normalization directly in the extraction prompt
+			content = str(item.get("content", "")).strip()
 			if not content:
 				continue
 			mtype = item.get("type", "explicit")

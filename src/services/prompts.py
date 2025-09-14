@@ -80,10 +80,30 @@ Instructions:
 - Projects: unify; decisions/milestones/next_action/due_date live in project object.
 - Relationships: capture closeness and "getting to know someone"; include helpful notes.
 - Learning_journal: capture active learning, goals, progress level, recent practice.
+
+CONTENT NORMALIZATION RULES (CRITICAL):
 - Content MUST begin with the literal prefix "User ".
-- Preserve explicit temporal phrases verbatim in content (e.g., "next month").
-- Prefer simple present tense ("runs" instead of "is running").
-- Time-bound → short-term (ttl set); stable → semantic; no duplicates; STRICT JSON.
+- Convert first-person statements to third-person:
+  * "I love X" → "User loves X"
+  * "I like X" → "User likes X" 
+  * "I prefer X" → "User prefers X"
+  * "I'm doing X" → "User is doing X"
+  * "I am doing X" → "User is doing X"
+- Normalize verb tenses to simple present when appropriate:
+  * "is running 3 times a week" → "runs 3 times a week"
+  * "is planning a vacation" → "is planning a vacation" (keep for temporal context)
+- Preserve explicit temporal phrases verbatim in content (e.g., "next month", "this week", "today").
+- Ensure content ends with a period.
+- Remove any leading "The user " and replace with "User ".
+- For vacation/travel content, preserve temporal context from source text.
+
+Examples of proper normalization:
+- "I love working on AI projects" → "User loves working on AI projects."
+- "I'm planning a vacation next month" → "User is planning a vacation next month."
+- "I run 3 times a week" → "User runs 3 times a week."
+- "The user prefers coffee" → "User prefers coffee."
+
+Time-bound → short-term (ttl set); stable → semantic; no duplicates; STRICT JSON.
 """.strip()
 
 

@@ -50,6 +50,54 @@ export OPENAI_API_KEY=YOUR_REAL_KEY
 uvicorn src.app:app --reload --host 0.0.0.0 --port 8080
 ```
 
+## Local Development (venv)
+
+### Ubuntu/Debian prerequisites
+- Ensure system packages for venv and builds (for `chroma-hnswlib`) are installed:
+```bash
+sudo apt-get update -y
+sudo apt-get install -y python3-venv python3-dev build-essential cmake
+```
+
+### Create and use a local virtual environment
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -U pip setuptools wheel
+pip install -r requirements.txt
+```
+
+### Environment variables
+- Required: `OPENAI_API_KEY`
+- External ChromaDB (recommended for local):
+  - `CHROMA_HOST=localhost`
+  - `CHROMA_PORT=8000`
+  - `CHROMA_TENANT=agentic-memories`
+  - `CHROMA_DATABASE=memories`
+
+You can place these in `.env` (the app auto-loads it):
+```bash
+cp env.example .env
+echo "OPENAI_API_KEY=your_key_here" >> .env
+```
+
+### Run locally (without Docker)
+```bash
+uvicorn src.app:app --reload --host 0.0.0.0 --port 8080
+```
+
+### Run tests
+```bash
+pytest -q
+```
+
+### Troubleshooting
+- If installation fails building `chroma-hnswlib` wheels, install system build tools:
+```bash
+sudo apt-get install -y build-essential python3-dev cmake
+```
+- Ensure the external ChromaDB server is reachable at `http://localhost:8000`.
+
 ## Project Overview
 
 ### Purpose
@@ -162,8 +210,17 @@ uvicorn src.app:app --reload --host 0.0.0.0 --port 8080
 
 ### Testing
 ```bash
+# Run unit tests
 pytest -q
+
+# Run E2E tests against deployed app
+./tests/e2e/run_e2e_tests.sh
+
+# Or use Makefile
+make test          # Unit tests
+make test-e2e      # E2E tests
 ```
+
 Targets: unit, integration, and E2E (>80% coverage), including multi‑user isolation, short‑term persistence/expiration, and forgetting logic.
 
 ## Phased Build Plan

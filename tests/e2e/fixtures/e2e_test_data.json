@@ -1,0 +1,663 @@
+{
+  "conversations": [
+    {
+      "user_id": "test_user_22",
+      "history": [
+        {
+          "role": "user",
+          "content": "I love sci-fi books and fantasy novels."
+        },
+        {
+          "role": "assistant",
+          "content": "That's great! What's your favorite author?"
+        },
+        {
+          "role": "user",
+          "content": "I really enjoy Isaac Asimov and J.R.R. Tolkien."
+        },
+        {
+          "role": "assistant",
+          "content": "Both are excellent choices! Have you read any recent sci-fi?"
+        },
+        {
+          "role": "user",
+          "content": "Yes, I'm currently reading The Expanse series."
+        }
+      ],
+      "topic": "sci-fi",
+      "complexity": "medium"
+    },
+    {
+      "user_id": "test_user_22",
+      "history": [
+        {
+          "role": "user",
+          "content": "I'm planning a two-week vacation to Japan next month."
+        },
+        {
+          "role": "assistant",
+          "content": "That sounds exciting! What are you most looking forward to?"
+        },
+        {
+          "role": "user",
+          "content": "I want to visit Tokyo, Kyoto, Osaka, and try authentic ramen and sushi."
+        },
+        {
+          "role": "assistant",
+          "content": "Those are great choices! Have you been to Japan before?"
+        },
+        {
+          "role": "user",
+          "content": "No, this will be my first time. I'm a bit nervous about the language barrier."
+        },
+        {
+          "role": "assistant",
+          "content": "Don't worry, many people speak English in tourist areas. Have you booked your flights?"
+        },
+        {
+          "role": "user",
+          "content": "Yes, I've booked flights and hotels. I'm staying in Shibuya for the Tokyo portion."
+        }
+      ],
+      "topic": "travel",
+      "complexity": "complex"
+    },
+    {
+      "user_id": "test_user_22",
+      "history": [
+        {
+          "role": "user",
+          "content": "I'm working on a Python project for data analysis."
+        },
+        {
+          "role": "assistant",
+          "content": "That's great! What kind of project is it?"
+        },
+        {
+          "role": "user",
+          "content": "It's analyzing customer behavior data to improve our product."
+        },
+        {
+          "role": "assistant",
+          "content": "That sounds interesting! What tools are you using?"
+        },
+        {
+          "role": "user",
+          "content": "I'm using pandas, numpy, and matplotlib for the analysis."
+        }
+      ],
+      "topic": "work",
+      "complexity": "medium"
+    },
+    {
+      "user_id": "test_user_22",
+      "history": [
+        {
+          "role": "user",
+          "content": "I love sci-fi books."
+        },
+        {
+          "role": "assistant",
+          "content": "That's great! What's your favorite author?"
+        },
+        {
+          "role": "user",
+          "content": "I really enjoy Isaac Asimov."
+        }
+      ],
+      "topic": "sci-fi",
+      "complexity": "simple"
+    },
+    {
+      "user_id": "test_user_22",
+      "history": [
+        {
+          "role": "user",
+          "content": "I love sci-fi books and fantasy novels, especially hard sci-fi."
+        },
+        {
+          "role": "assistant",
+          "content": "That's great! What's your favorite author?"
+        },
+        {
+          "role": "user",
+          "content": "I really enjoy Isaac Asimov, Arthur C. Clarke, and J.R.R. Tolkien."
+        },
+        {
+          "role": "assistant",
+          "content": "Both are excellent choices! Have you read any recent sci-fi?"
+        },
+        {
+          "role": "user",
+          "content": "Yes, I'm currently reading The Expanse series and I love the realistic physics."
+        },
+        {
+          "role": "assistant",
+          "content": "The Expanse is fantastic! What do you think of the character development?"
+        },
+        {
+          "role": "user",
+          "content": "I think the characters are well-developed and the political intrigue is fascinating."
+        }
+      ],
+      "topic": "sci-fi",
+      "complexity": "complex"
+    },
+    {
+      "user_id": "test_user_22",
+      "history": [
+        {
+          "role": "user",
+          "content": "I'm working on a Python project."
+        },
+        {
+          "role": "assistant",
+          "content": "That's great! What kind of project is it?"
+        },
+        {
+          "role": "user",
+          "content": "It's a data analysis project for work."
+        }
+      ],
+      "topic": "work",
+      "complexity": "simple"
+    },
+    {
+      "user_id": "test_user_22",
+      "history": [
+        {
+          "role": "user",
+          "content": "I'm planning a two-week vacation to Japan next month."
+        },
+        {
+          "role": "assistant",
+          "content": "That sounds exciting! What are you most looking forward to?"
+        },
+        {
+          "role": "user",
+          "content": "I want to visit Tokyo, Kyoto, Osaka, and try authentic ramen and sushi."
+        },
+        {
+          "role": "assistant",
+          "content": "Those are great choices! Have you been to Japan before?"
+        },
+        {
+          "role": "user",
+          "content": "No, this will be my first time. I'm a bit nervous about the language barrier."
+        },
+        {
+          "role": "assistant",
+          "content": "Don't worry, many people speak English in tourist areas. Have you booked your flights?"
+        },
+        {
+          "role": "user",
+          "content": "Yes, I've booked flights and hotels. I'm staying in Shibuya for the Tokyo portion."
+        }
+      ],
+      "topic": "travel",
+      "complexity": "complex"
+    },
+    {
+      "user_id": "test_user_22",
+      "history": [
+        {
+          "role": "user",
+          "content": "I love sci-fi books and fantasy novels."
+        },
+        {
+          "role": "assistant",
+          "content": "That's great! What's your favorite author?"
+        },
+        {
+          "role": "user",
+          "content": "I really enjoy Isaac Asimov and J.R.R. Tolkien."
+        },
+        {
+          "role": "assistant",
+          "content": "Both are excellent choices! Have you read any recent sci-fi?"
+        },
+        {
+          "role": "user",
+          "content": "Yes, I'm currently reading The Expanse series."
+        }
+      ],
+      "topic": "sci-fi",
+      "complexity": "medium"
+    },
+    {
+      "user_id": "test_user_22",
+      "history": [
+        {
+          "role": "user",
+          "content": "I run 3 times a week to stay healthy and manage stress."
+        },
+        {
+          "role": "assistant",
+          "content": "That's great for your health!"
+        },
+        {
+          "role": "user",
+          "content": "Yes, it helps me stay in shape and clear my mind after work."
+        },
+        {
+          "role": "assistant",
+          "content": "Exercise is great for mental health too!"
+        },
+        {
+          "role": "user",
+          "content": "I also do yoga on the weekends for flexibility and meditation."
+        },
+        {
+          "role": "assistant",
+          "content": "That's a great combination! How long have you been doing this routine?"
+        },
+        {
+          "role": "user",
+          "content": "I've been running for about 2 years and started yoga 6 months ago."
+        }
+      ],
+      "topic": "health",
+      "complexity": "complex"
+    },
+    {
+      "user_id": "test_user_22",
+      "history": [
+        {
+          "role": "user",
+          "content": "I'm working on a Python project for data analysis at work."
+        },
+        {
+          "role": "assistant",
+          "content": "That's great! What kind of project is it?"
+        },
+        {
+          "role": "user",
+          "content": "It's analyzing customer behavior data to improve our product recommendations."
+        },
+        {
+          "role": "assistant",
+          "content": "That sounds interesting! What tools are you using?"
+        },
+        {
+          "role": "user",
+          "content": "I'm using pandas, numpy, matplotlib, and scikit-learn for the analysis."
+        },
+        {
+          "role": "assistant",
+          "content": "That's a solid stack! How's the project going?"
+        },
+        {
+          "role": "user",
+          "content": "It's going well, but I'm running into some performance issues with large datasets."
+        }
+      ],
+      "topic": "work",
+      "complexity": "complex"
+    },
+    {
+      "user_id": "test_user_22",
+      "history": [
+        {
+          "role": "user",
+          "content": "I love sci-fi books and fantasy novels."
+        },
+        {
+          "role": "assistant",
+          "content": "That's great! What's your favorite author?"
+        },
+        {
+          "role": "user",
+          "content": "I really enjoy Isaac Asimov and J.R.R. Tolkien."
+        },
+        {
+          "role": "assistant",
+          "content": "Both are excellent choices! Have you read any recent sci-fi?"
+        },
+        {
+          "role": "user",
+          "content": "Yes, I'm currently reading The Expanse series."
+        }
+      ],
+      "topic": "sci-fi",
+      "complexity": "medium"
+    },
+    {
+      "user_id": "test_user_22",
+      "history": [
+        {
+          "role": "user",
+          "content": "I run 3 times a week to stay healthy."
+        },
+        {
+          "role": "assistant",
+          "content": "That's great for your health!"
+        },
+        {
+          "role": "user",
+          "content": "Yes, it helps me stay in shape and clear my mind."
+        },
+        {
+          "role": "assistant",
+          "content": "Exercise is great for mental health too!"
+        },
+        {
+          "role": "user",
+          "content": "I also do yoga on the weekends for flexibility."
+        }
+      ],
+      "topic": "health",
+      "complexity": "medium"
+    },
+    {
+      "user_id": "test_user_22",
+      "history": [
+        {
+          "role": "user",
+          "content": "I'm working on a Python project for data analysis."
+        },
+        {
+          "role": "assistant",
+          "content": "That's great! What kind of project is it?"
+        },
+        {
+          "role": "user",
+          "content": "It's analyzing customer behavior data to improve our product."
+        },
+        {
+          "role": "assistant",
+          "content": "That sounds interesting! What tools are you using?"
+        },
+        {
+          "role": "user",
+          "content": "I'm using pandas, numpy, and matplotlib for the analysis."
+        }
+      ],
+      "topic": "work",
+      "complexity": "medium"
+    },
+    {
+      "user_id": "test_user_22",
+      "history": [
+        {
+          "role": "user",
+          "content": "I'm working on a Python project for data analysis."
+        },
+        {
+          "role": "assistant",
+          "content": "That's great! What kind of project is it?"
+        },
+        {
+          "role": "user",
+          "content": "It's analyzing customer behavior data to improve our product."
+        },
+        {
+          "role": "assistant",
+          "content": "That sounds interesting! What tools are you using?"
+        },
+        {
+          "role": "user",
+          "content": "I'm using pandas, numpy, and matplotlib for the analysis."
+        }
+      ],
+      "topic": "work",
+      "complexity": "medium"
+    },
+    {
+      "user_id": "test_user_22",
+      "history": [
+        {
+          "role": "user",
+          "content": "I love sci-fi books and fantasy novels."
+        },
+        {
+          "role": "assistant",
+          "content": "That's great! What's your favorite author?"
+        },
+        {
+          "role": "user",
+          "content": "I really enjoy Isaac Asimov and J.R.R. Tolkien."
+        },
+        {
+          "role": "assistant",
+          "content": "Both are excellent choices! Have you read any recent sci-fi?"
+        },
+        {
+          "role": "user",
+          "content": "Yes, I'm currently reading The Expanse series."
+        }
+      ],
+      "topic": "sci-fi",
+      "complexity": "medium"
+    },
+    {
+      "user_id": "test_user_22",
+      "history": [
+        {
+          "role": "user",
+          "content": "I love sci-fi books."
+        },
+        {
+          "role": "assistant",
+          "content": "That's great! What's your favorite author?"
+        },
+        {
+          "role": "user",
+          "content": "I really enjoy Isaac Asimov."
+        }
+      ],
+      "topic": "sci-fi",
+      "complexity": "simple"
+    },
+    {
+      "user_id": "test_user_22",
+      "history": [
+        {
+          "role": "user",
+          "content": "I'm planning a two-week vacation to Japan next month."
+        },
+        {
+          "role": "assistant",
+          "content": "That sounds exciting! What are you most looking forward to?"
+        },
+        {
+          "role": "user",
+          "content": "I want to visit Tokyo, Kyoto, Osaka, and try authentic ramen and sushi."
+        },
+        {
+          "role": "assistant",
+          "content": "Those are great choices! Have you been to Japan before?"
+        },
+        {
+          "role": "user",
+          "content": "No, this will be my first time. I'm a bit nervous about the language barrier."
+        },
+        {
+          "role": "assistant",
+          "content": "Don't worry, many people speak English in tourist areas. Have you booked your flights?"
+        },
+        {
+          "role": "user",
+          "content": "Yes, I've booked flights and hotels. I'm staying in Shibuya for the Tokyo portion."
+        }
+      ],
+      "topic": "travel",
+      "complexity": "complex"
+    },
+    {
+      "user_id": "test_user_22",
+      "history": [
+        {
+          "role": "user",
+          "content": "I'm working on a Python project for data analysis at work."
+        },
+        {
+          "role": "assistant",
+          "content": "That's great! What kind of project is it?"
+        },
+        {
+          "role": "user",
+          "content": "It's analyzing customer behavior data to improve our product recommendations."
+        },
+        {
+          "role": "assistant",
+          "content": "That sounds interesting! What tools are you using?"
+        },
+        {
+          "role": "user",
+          "content": "I'm using pandas, numpy, matplotlib, and scikit-learn for the analysis."
+        },
+        {
+          "role": "assistant",
+          "content": "That's a solid stack! How's the project going?"
+        },
+        {
+          "role": "user",
+          "content": "It's going well, but I'm running into some performance issues with large datasets."
+        }
+      ],
+      "topic": "work",
+      "complexity": "complex"
+    },
+    {
+      "user_id": "test_user_22",
+      "history": [
+        {
+          "role": "user",
+          "content": "I'm planning a two-week vacation to Japan next month."
+        },
+        {
+          "role": "assistant",
+          "content": "That sounds exciting! What are you most looking forward to?"
+        },
+        {
+          "role": "user",
+          "content": "I want to visit Tokyo, Kyoto, Osaka, and try authentic ramen and sushi."
+        },
+        {
+          "role": "assistant",
+          "content": "Those are great choices! Have you been to Japan before?"
+        },
+        {
+          "role": "user",
+          "content": "No, this will be my first time. I'm a bit nervous about the language barrier."
+        },
+        {
+          "role": "assistant",
+          "content": "Don't worry, many people speak English in tourist areas. Have you booked your flights?"
+        },
+        {
+          "role": "user",
+          "content": "Yes, I've booked flights and hotels. I'm staying in Shibuya for the Tokyo portion."
+        }
+      ],
+      "topic": "travel",
+      "complexity": "complex"
+    },
+    {
+      "user_id": "test_user_22",
+      "history": [
+        {
+          "role": "user",
+          "content": "I love sci-fi books and fantasy novels."
+        },
+        {
+          "role": "assistant",
+          "content": "That's great! What's your favorite author?"
+        },
+        {
+          "role": "user",
+          "content": "I really enjoy Isaac Asimov and J.R.R. Tolkien."
+        },
+        {
+          "role": "assistant",
+          "content": "Both are excellent choices! Have you read any recent sci-fi?"
+        },
+        {
+          "role": "user",
+          "content": "Yes, I'm currently reading The Expanse series."
+        }
+      ],
+      "topic": "sci-fi",
+      "complexity": "medium"
+    }
+  ],
+  "expected_memories": [
+    "User loves sci-fi books and fantasy novels.",
+    "User enjoys Isaac Asimov and J.R.R. Tolkien.",
+    "User is currently reading The Expanse series.",
+    "User is planning a two-week vacation to Japan next month.",
+    "User wants to visit Tokyo, Kyoto, Osaka, and try authentic ramen and sushi.",
+    "This will be User's first time in Japan.",
+    "User is nervous about the language barrier.",
+    "User has booked flights and hotels.",
+    "User is staying in Shibuya for the Tokyo portion.",
+    "User is working on a Python project for data analysis.",
+    "User is analyzing customer behavior data to improve their product.",
+    "User is using pandas, numpy, and matplotlib for the analysis.",
+    "User loves sci-fi books.",
+    "User enjoys Isaac Asimov.",
+    "User loves sci-fi books and fantasy novels, especially hard sci-fi.",
+    "User enjoys Isaac Asimov, Arthur C. Clarke, and J.R.R. Tolkien.",
+    "User is currently reading The Expanse series and loves the realistic physics.",
+    "User thinks the characters are well-developed and the political intrigue is fascinating.",
+    "User is working on a Python project.",
+    "It's a data analysis project for work.",
+    "User is planning a two-week vacation to Japan next month.",
+    "User wants to visit Tokyo, Kyoto, Osaka, and try authentic ramen and sushi.",
+    "This will be User's first time in Japan.",
+    "User is nervous about the language barrier.",
+    "User has booked flights and hotels.",
+    "User is staying in Shibuya for the Tokyo portion.",
+    "User loves sci-fi books and fantasy novels.",
+    "User enjoys Isaac Asimov and J.R.R. Tolkien.",
+    "User is currently reading The Expanse series.",
+    "User runs 3 times a week to stay healthy and manage stress.",
+    "Running helps User stay in shape and clear their mind after work.",
+    "User also does yoga on the weekends for flexibility and meditation.",
+    "User has been running for about 2 years and started yoga 6 months ago.",
+    "User is working on a Python project for data analysis at work.",
+    "User is analyzing customer behavior data to improve their product recommendations.",
+    "User is using pandas, numpy, matplotlib, and scikit-learn for the analysis.",
+    "User is running into performance issues with large datasets.",
+    "User loves sci-fi books and fantasy novels.",
+    "User enjoys Isaac Asimov and J.R.R. Tolkien.",
+    "User is currently reading The Expanse series.",
+    "User runs 3 times a week to stay healthy.",
+    "Running helps User stay in shape and clear their mind.",
+    "User also does yoga on the weekends for flexibility.",
+    "User is working on a Python project for data analysis.",
+    "User is analyzing customer behavior data to improve their product.",
+    "User is using pandas, numpy, and matplotlib for the analysis.",
+    "User is working on a Python project for data analysis.",
+    "User is analyzing customer behavior data to improve their product.",
+    "User is using pandas, numpy, and matplotlib for the analysis.",
+    "User loves sci-fi books and fantasy novels.",
+    "User enjoys Isaac Asimov and J.R.R. Tolkien.",
+    "User is currently reading The Expanse series.",
+    "User loves sci-fi books.",
+    "User enjoys Isaac Asimov.",
+    "User is planning a two-week vacation to Japan next month.",
+    "User wants to visit Tokyo, Kyoto, Osaka, and try authentic ramen and sushi.",
+    "This will be User's first time in Japan.",
+    "User is nervous about the language barrier.",
+    "User has booked flights and hotels.",
+    "User is staying in Shibuya for the Tokyo portion.",
+    "User is working on a Python project for data analysis at work.",
+    "User is analyzing customer behavior data to improve their product recommendations.",
+    "User is using pandas, numpy, matplotlib, and scikit-learn for the analysis.",
+    "User is running into performance issues with large datasets.",
+    "User is planning a two-week vacation to Japan next month.",
+    "User wants to visit Tokyo, Kyoto, Osaka, and try authentic ramen and sushi.",
+    "This will be User's first time in Japan.",
+    "User is nervous about the language barrier.",
+    "User has booked flights and hotels.",
+    "User is staying in Shibuya for the Tokyo portion.",
+    "User loves sci-fi books and fantasy novels.",
+    "User enjoys Isaac Asimov and J.R.R. Tolkien.",
+    "User is currently reading The Expanse series."
+  ],
+  "test_user_id": "test_user_22",
+  "generated_at": "2025-09-14T14:10:03.701186",
+  "total_conversations": 20,
+  "total_expected_memories": 73
+}

@@ -126,41 +126,14 @@ def _call_llm_json(system_prompt: str, user_payload: Dict[str, Any], *, expect_a
 
 
 def _normalize_llm_content(content: str, source_text: str) -> str:
-	text = (content or "").strip()
-	if not text:
-		return text
-	lower = text.lower()
-	if lower.startswith("the user "):
-		text = "User " + text[9:]
-		lower = text.lower()
-	if lower.startswith("i love "):
-		text = f"User loves {text[7:].strip()}"
-	elif lower.startswith("i like "):
-		text = f"User likes {text[7:].strip()}"
-	elif lower.startswith("i prefer "):
-		text = f"User prefers {text[9:].strip()}"
-	text = text.replace("I’m ", "User is ").replace("I'm ", "User is ")
-	text = text.replace("planning a vacation", "is planning a vacation")
-	if text.lower().startswith("planning a vacation"):
-		text = "User " + text
-	if text.lower().startswith("is planning a vacation"):
-		text = "User " + text
-	if ("is running" in lower or "running" in lower) and "times a week" in lower:
-		text = re.sub(r"(?i)(the\s+)?user is running\s+(\d+)\s+times a week", r"User runs \2 times a week", text)
-	if "runs" in text.lower() and "times a week" in text.lower() and not text.lower().startswith("user "):
-		text = "User " + text
-	temporals = ["next month", "this week", "right now", "today", "tonight", "this evening", "this morning"]
-	st_lower = (source_text or "").lower()
-	for phrase in temporals:
-		if phrase in st_lower and phrase not in text.lower():
-			if any(k in text.lower() for k in ["vacation", "trip", "travel", "japan"]):
-				if text.endswith("."):
-					text = text[:-1] + f" {phrase}."
-				else:
-					text = text + f" {phrase}."
-				break
-	if not text.endswith("."):
-		text = text + "."
-	return text
+	"""
+	DEPRECATED: This function is deprecated as of the enhanced extraction prompt.
+	The LLM now handles content normalization directly in the EXTRACTION_PROMPT.
+	
+	This function is kept for backward compatibility but should not be used.
+	The extraction pipeline now relies on LLM-based normalization.
+	"""
+	# For backward compatibility, return content as-is since LLM handles normalization
+	return content
 
 
