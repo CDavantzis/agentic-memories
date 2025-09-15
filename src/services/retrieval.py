@@ -8,7 +8,7 @@ import json
 from src.dependencies.chroma import get_chroma_client
 from src.dependencies.redis_client import get_redis_client
 from src.config import get_embedding_model_name
-from src.services.extraction import _generate_embedding
+from src.services.embedding_utils import generate_embedding
 
 
 COLLECTION_NAME = "memories"
@@ -25,8 +25,15 @@ def _embedding_dim_from_model(model: str) -> int:
 
 
 def _standard_collection_name() -> str:
-	model = get_embedding_model_name()
-	dim = _embedding_dim_from_model(model)
+	# Prefer actual embedding dimension to align with storage collections
+	try:
+		probe = generate_embedding("dimension-probe") or []
+		dim = len(probe)
+	except Exception:
+		dim = 0
+	if dim <= 0:
+		model = get_embedding_model_name()
+		dim = _embedding_dim_from_model(model)
 	return f"{COLLECTION_NAME}_{dim}"
 
 
@@ -82,21 +89,27 @@ def search_memories(
 	if "type" in filters and filters["type"]:
 		where["type"] = filters["type"]
 	# tags filter (best-effort; stored as JSON string)
-	if "tags" in filters and filters["tags"]:
-		where["tags"] = {"$contains": json.dumps(filters["tags"])[:256]}
+	# Note: ChromaDB v2 may not support $contains, so we'll skip tags filtering for now
+	# if "tags" in filters and filters["tags"]:
+	#     where["tags"] = {"$contains": json.dumps(filters["tags"])[:256]}
 
-	# Build query embedding locally
-	emb = _generate_embedding(query) or []
-
-	# Semantic query
-	semantic_results = collection.query(  # type: ignore[attr-defined]
-		query_embeddings=[emb], n_results=limit + offset, where=where
-	)
-
-	ids: List[str] = semantic_results.get("ids", [[]])[0]
-	docs: List[str] = semantic_results.get("documents", [[]])[0]
-	scores: List[float] = semantic_results.get("distances", [[]])[0]
-	metas: List[Dict[str, Any]] = semantic_results.get("metadatas", [[]])[0]
+	if not query or query.strip() == "":
+		# Metadata-only fetch via v2 get
+		semantic_results = collection.get(where=where, limit=limit + offset, offset=offset)  # type: ignore[attr-defined]
+		ids = semantic_results.get("ids", [])
+		docs = semantic_results.get("documents", [])
+		metas = semantic_results.get("metadatas", [])
+		scores = [0.0] * len(ids)
+	else:
+		# Semantic query
+		emb = generate_embedding(query) or []
+		semantic_results = collection.query(  # type: ignore[attr-defined]
+			query_embeddings=[emb], n_results=limit + offset, where=where
+		)
+		ids = semantic_results.get("ids", [[]])[0]
+		docs = semantic_results.get("documents", [[]])[0]
+		scores = semantic_results.get("distances", [[]])[0]
+		metas = semantic_results.get("metadatas", [[]])[0]
 
 	items: List[Dict[str, Any]] = []
 	for i, mem_id in enumerate(ids):

@@ -43,7 +43,7 @@ def test_retrieve_stub():
 		return mock_results, 1
 	
 	with patch('src.app.search_memories', side_effect=mock_search_memories):
-		resp = client.get("/v1/retrieve", params={"query": "sci-fi", "limit": 5})
+		resp = client.get("/v1/retrieve", params={"query": "sci-fi", "limit": 5, "user_id": "user-123"})
 		assert resp.status_code == 200
 		data = resp.json()
 		assert "results" in data and isinstance(data["results"], list)

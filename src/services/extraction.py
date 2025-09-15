@@ -23,6 +23,7 @@ from src.config import (
 from src.services.prompts import WORTHINESS_PROMPT, TYPING_PROMPT, EXTRACTION_PROMPT
 from src.services.graph_extraction import run_extraction_graph
 from src.services.extract_utils import _call_llm_json
+from src.services.embedding_utils import generate_embedding
 
 
 # Defaults for Phase 2
@@ -36,6 +37,9 @@ EXTRACTION_MODEL = get_extraction_model_name()
 class ExtractionResult:
 	memories: List[Memory]
 	summary: Optional[str]
+	duplicates_avoided: int = 0
+	updates_made: int = 0
+	existing_memories_checked: int = 0
 
 
 def _is_user_message(message: Message) -> bool:
@@ -45,28 +49,6 @@ def _is_user_message(message: Message) -> bool:
 # Heuristic helpers removed for LLM-only pipeline
 
 
-def _generate_embedding(text: str) -> Optional[List[float]]:
-	# Use OpenAI if configured; otherwise return a deterministic small embedding for tests
-	api_key = os.getenv("OPENAI_API_KEY")
-	if api_key and api_key.strip() != "":
-		try:
-			from openai import OpenAI  # type: ignore
-
-			client = OpenAI(api_key=api_key)
-			resp = client.embeddings.create(model=EMBEDDING_MODEL, input=text)
-			return list(resp.data[0].embedding)
-		except Exception:
-			# Fall back to deterministic embedding on any error during Phase 2
-			pass
-
-	# Deterministic fallback: map text to a small vector using hash
-	# Keep it small to be fast and deterministic for tests
-	seed = sum(ord(c) for c in text) or 1
-	vec = []
-	for i in range(16):
-		seed = (1103515245 * seed + 12345) & 0x7FFFFFFF
-		vec.append((seed % 1000) / 1000.0)
-	return vec
 
 
 def _call_llm_json(system_prompt: str, user_payload: Dict[str, Any], *, expect_array: bool = False) -> Optional[Any]:
@@ -156,17 +138,28 @@ def _normalize_llm_content(content: str, source_text: str) -> str:
 
 def extract_from_transcript(request: TranscriptRequest) -> ExtractionResult:
 	memories: List[Memory] = []
+	duplicates_avoided = 0
+	updates_made = 0
+	existing_memories_checked = 0
 
 	# Consider only user messages; simple window: all provided
 	user_messages = [m for m in request.history if _is_user_message(m)]
 	if not user_messages:
-		return ExtractionResult(memories=[], summary=None)
+		return ExtractionResult(memories=[], summary=None, duplicates_avoided=0, updates_made=0, existing_memories_checked=0)
 
-	# LLM pipeline via LangGraph (worthiness → extraction)
+	# LLM pipeline via LangGraph (worthiness → extraction with context)
 	graph_out = run_extraction_graph(request)
 	extracted_items: List[Dict[str, Any]] = []
+	existing_memories_checked = len(graph_out.get("existing_memories", []))
+	
 	if graph_out.get("worthy") is False and not get_aggressive_mode():
-		return ExtractionResult(memories=[], summary="LLM: not memory-worthy")
+		return ExtractionResult(
+			memories=[], 
+			summary="LLM: not memory-worthy", 
+			duplicates_avoided=0, 
+			updates_made=0, 
+			existing_memories_checked=existing_memories_checked
+		)
 	extracted_items = graph_out.get("items") or []
 
 	if extracted_items:
@@ -187,7 +180,7 @@ def extract_from_transcript(request: TranscriptRequest) -> ExtractionResult:
 			relationship = item.get("relationship")
 			learning_journal = item.get("learning_journal")
 
-			embedding = _generate_embedding(content)
+			embedding = generate_embedding(content)
 			memory = Memory(
 				user_id=request.user_id,
 				content=content,
@@ -217,7 +210,7 @@ def extract_from_transcript(request: TranscriptRequest) -> ExtractionResult:
 						content=na_content,
 						layer="short-term",  # next actions are temporal
 						type="explicit",
-						embedding=_generate_embedding(na_content),
+						embedding=generate_embedding(na_content),
 						confidence=max(0.7, confidence),
 						ttl=SHORT_TERM_TTL_SECONDS,
 						metadata={
@@ -234,7 +227,21 @@ def extract_from_transcript(request: TranscriptRequest) -> ExtractionResult:
 		kinds = {m.type for m in memories}
 		layers = {m.layer for m in memories}
 		summary = f"Extracted {len(memories)} memories ({', '.join(sorted(kinds))}) across layers: {', '.join(sorted(layers))}."
+		
+		# Add context information to summary
+		if existing_memories_checked > 0:
+			summary += f" Checked {existing_memories_checked} existing memories for context."
+		if duplicates_avoided > 0:
+			summary += f" Avoided {duplicates_avoided} duplicate extractions."
+		if updates_made > 0:
+			summary += f" Made {updates_made} updates to existing information."
 
-	return ExtractionResult(memories=memories, summary=summary)
+	return ExtractionResult(
+		memories=memories, 
+		summary=summary,
+		duplicates_avoided=duplicates_avoided,
+		updates_made=updates_made,
+		existing_memories_checked=existing_memories_checked
+	)
 
 

@@ -160,8 +160,9 @@ Pydantic `Memory` (planned):
 ## API Endpoints
 - `GET /health` — Liveness check
 - `POST /store` — Input: transcript JSON; runs extraction → storage
-- `GET /retrieve` — Query params: `query`, optional `layer`, `type`; returns ranked memories
-- `POST /retrieve/structured` — LLM-organized, category-based retrieval (emotions, behaviors, personal, professional, habits, skills_tools, projects, relationships, learning_journal, other)
+- `GET /retrieve` — Query params: `query`, `user_id` (required), optional `layer`, `type`; returns ranked memories
+- `GET /retrieve` — Query params: `user_id` (required), optional `query`, `layer`, `type`; returns ranked memories. If `query` is omitted or empty, all memories for the user are returned.
+- `POST /retrieve/structured` — LLM-organized, category-based retrieval (emotions, behaviors, personal, professional, habits, skills_tools, projects, relationships, learning_journal, other). If `query` is empty, the service aggregates ALL memories for the user and categorizes them.
 - `POST /forget` — Manually trigger pruning/expiration
 - `POST /maintenance` — Trigger scheduled jobs on demand
 
@@ -279,8 +280,8 @@ Services:
     - Pagination; optional Redis cache for short‑term
 
 API wiring:
-- `POST /v1/store`: run extraction, persist to Chroma, return real IDs; bump user cache namespace
-- `GET /v1/retrieve`: query Chroma with query embeddings; apply filters; cache + paginate
+- `POST /v1/store`: run context-aware extraction (considers existing memories), persist to Chroma, return real IDs; bump user cache namespace
+- `GET /v1/retrieve`: query Chroma with query embeddings; apply filters; cache + paginate; requires user_id
 - `POST /v1/retrieve/structured`: LLM organizes candidate memories into predefined categories and returns structured sets
 
 Performance targets:
@@ -399,8 +400,8 @@ Deliverables: Test suite; Dockerfile; README updates with run instructions.
 - Errors: `400` invalid schema, `401` unauthorized, `429` rate limit, `500` internal.
 
 ### GET /v1/retrieve
-- Purpose: Retrieve ranked memories for a query.
-- Query params: `query` (required), `layer` (optional), `type` (optional), `limit` (default 10), `offset` (default 0)
+- Purpose: Retrieve ranked memories for a query (or all if no query provided).
+- Query params: `user_id` (required), `query` (optional), `layer` (optional), `type` (optional), `limit` (default 10), `offset` (default 0). If `query` is omitted or empty, all memories for the user are returned.
 - Response body:
 ```json
 {
@@ -462,12 +463,21 @@ curl -X POST http://localhost:8080/v1/store \
   -H "X-API-KEY: $API_KEY" \
   -d '{"user_id":"user-123","history":[{"role":"user","content":"I love sci-fi books."}]}'
 
-curl "http://localhost:8080/v1/retrieve?query=sci-fi&limit=5" \
+curl "http://localhost:8080/v1/retrieve?query=sci-fi&user_id=user-123&limit=5" \
+  -H "X-API-KEY: $API_KEY"
+
+# Retrieve ALL memories (no query)
+curl -s "http://localhost:8080/v1/retrieve?user_id=user-123&limit=10" \
   -H "X-API-KEY: $API_KEY"
 
 curl -s -X POST http://localhost:8080/v1/retrieve/structured \
   -H "Content-Type: application/json" \
   -d '{"user_id":"user-123","query":"reading preferences"}'
+
+# Structured retrieval across ALL memories (empty query)
+curl -s -X POST http://localhost:8080/v1/retrieve/structured \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"user-123","query":"","limit":100}'
 ```
 
 
@@ -585,7 +595,7 @@ services:
 - [x] Phase 1 — Project Setup & Models
 - [x] Phase 2 — Extraction Engine
 - [x] Phase 3 — Storage & Retrieval
-- [ ] Phase 4 — Auth & Interfaces
+- [x] Phase 4 — Auth & Interfaces (user_id mandatory, context-aware extraction, optional retrieval query)
 - [ ] Phase 5 — Forgetting & Maintenance
 - [ ] Phase 6 — Security, Testing, Deployment
 - [x] API Contracts implemented
@@ -654,6 +664,20 @@ curl -s -X POST http://localhost:8080/v1/store \
 - 2025-09-14: Phase 2 upgrade to LLM-only with LangGraph. Removed heuristic path; added strict prompts (worthiness/typing/extraction), normalization (prefix "User ", present tense, temporal retention), derived `next_action` memory, eval harness smoke passing. Added `src/services/graph_extraction.py` and `src/services/extract_utils.py`. `OPENAI_API_KEY` now required at startup and for `/v1/store`.
 
 - 2025-09-14: Phase 3 – Storage/Retrieval upgraded to Chroma v2 HTTP. Standardized collection per embedding dimension (`memories_3072`), serialized complex metadata (e.g., tags) as JSON strings, switched retrieval to local query embeddings, and added an LLM-powered structured retrieval endpoint `/v1/retrieve/structured`. Created tenant/database via v2 where required.
+
+- 2025-09-15: Retrieval updates
+  - `GET /v1/retrieve`: `query` is optional. When omitted/empty, retrieval uses metadata-only path to return all user memories; `user_id` always required.
+  - `POST /v1/retrieve/structured`: If `query` is empty, the service aggregates ALL user memories (paged) and categorizes them; if present, focuses on relevancy to the query.
+  - Chroma v2 `get`: request supported fields (`documents`, `metadatas`); IDs are mapped from the server response.
+
+- 2025-09-15: Enhanced Memory Extraction with Context Awareness. Added context-aware memory extraction that considers existing memories during extraction to avoid duplicates and capture distinct new preferences. Key improvements:
+  - **Memory Context Retrieval**: Created `src/services/memory_context.py` with functions to retrieve relevant existing memories based on conversation topics
+  - **Enhanced Prompts**: Updated extraction prompts to handle existing memory context and extract distinct preferences as separate atomic items
+  - **Mandatory user_id**: Made `user_id` required for all retrieval operations (GET `/v1/retrieve`)
+  - **Multi-preference Extraction**: Enhanced prompts to parse coordinated lists (e.g., "mystery novels and thrillers") into separate memories
+  - **Extraction Metrics**: Added `duplicates_avoided`, `updates_made`, and `existing_memories_checked` to API responses
+  - **Fixed Circular Imports**: Resolved import issues by creating `src/services/embedding_utils.py`
+  - **Comprehensive Testing**: Verified retrieval works with user_id, multi-preference extraction, and context awareness
 
 ### ChromaDB Host Configuration
 - Set `CHROMA_HOST` and `CHROMA_PORT` for your environment.

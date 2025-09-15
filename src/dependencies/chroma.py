@@ -121,6 +121,19 @@ class V2Collection:
 		self.id = collection_id
 		self._endpoint_base = f"/tenants/{client.tenant}/databases/{client.database}/collections/{collection_id}"
 	
+	def get(self, where: Optional[Dict] = None, limit: Optional[int] = None, offset: Optional[int] = None, include: Optional[list] = None):
+		"""Fetch items by metadata only using v2 API."""
+		# Chroma v2 does not support 'ids' in include; ids are returned by default.
+		data: Dict[str, Any] = {
+			"where": where or {},
+			"include": include or ["documents", "metadatas"],
+		}
+		if limit is not None:
+			data["limit"] = limit
+		if offset is not None:
+			data["offset"] = offset
+		return self.client._make_request("POST", f"{self._endpoint_base}/get", data)
+	
 	def upsert(self, ids: list, documents: list, embeddings: list, metadatas: list):
 		"""Upsert documents to collection."""
 		# Coerce metadata values to scalars (v2 requires scalar values). Lists/dicts -> JSON strings.

@@ -115,13 +115,21 @@ def store_transcript(body: TranscriptRequest) -> StoreResponse:
 		)
 		for i, m in enumerate(result.memories)
 	]
-	return StoreResponse(memories_created=len(ids), ids=ids, summary=result.summary, memories=items)
+	return StoreResponse(
+		memories_created=len(ids), 
+		ids=ids, 
+		summary=result.summary, 
+		memories=items,
+		duplicates_avoided=result.duplicates_avoided,
+		updates_made=result.updates_made,
+		existing_memories_checked=result.existing_memories_checked
+	)
 
 
 @app.get("/v1/retrieve", response_model=RetrieveResponse)
 def retrieve(
-	query: str = Query(...),
-	user_id: Optional[str] = Query(default=""),
+	user_id: str = Query(...),
+	query: Optional[str] = Query(default=None, description="Search query (optional - omit to get all memories)"),
 	layer: Optional[str] = Query(default=None),
 	type: Optional[str] = Query(default=None),
 	limit: int = Query(default=10, ge=1, le=50),
@@ -132,7 +140,7 @@ def retrieve(
 		filters["layer"] = layer
 	if type:
 		filters["type"] = type
-	results, total = search_memories(user_id=user_id or "", query=query, filters=filters, limit=limit, offset=offset)  # Phase 4 will enforce auth-derived user_id
+	results, total = search_memories(user_id=user_id, query=query or "", filters=filters, limit=limit, offset=offset)  # Phase 4 will enforce auth-derived user_id
 	items = [
 		RetrieveItem(
 			id=r["id"],
@@ -153,11 +161,19 @@ def retrieve_structured(body: StructuredRetrieveRequest) -> StructuredRetrieveRe
 	api_key = get_openai_api_key()
 	if api_key is None or (isinstance(api_key, str) and api_key.strip() == ""):
 		raise HTTPException(status_code=400, detail="OPENAI_API_KEY is required")
-	if not body.query or body.query.strip() == "":
-		raise HTTPException(status_code=400, detail="query is required for structured retrieval")
 
-	# Pull a wider set of candidates
-	results, _ = search_memories(user_id=body.user_id, query=body.query, filters={}, limit=max(20, body.limit), offset=0)
+	# Pull ALL memories for the user (paginate with empty query)
+	all_results: List[dict] = []
+	batch_limit = max(100, body.limit)
+	offset = 0
+	while True:
+		batch, _ = search_memories(user_id=body.user_id, query="", filters={}, limit=batch_limit, offset=offset)
+		if not batch:
+			break
+		all_results.extend(batch)
+		if len(batch) < batch_limit:
+			break
+		offset += batch_limit
 
 	# Map candidates into a lightweight payload
 	candidates = [
@@ -167,23 +183,25 @@ def retrieve_structured(body: StructuredRetrieveRequest) -> StructuredRetrieveRe
 			"metadata": r.get("metadata", {}),
 			"score": float(r.get("score", 0.0)),
 		}
-		for r in results
+		for r in all_results
 	]
 
 	SYSTEM_PROMPT = (
 		"You are a retrieval organizer for a personal memory system.\n"
-		"Given a user query and a list of candidate memories, select and categorize the most relevant memories into these buckets: \n"
+		"You will be given an optional user query and ALL candidate memories for that user.\n"
+		"If the query is present, select and categorize the most relevant memories into these buckets: \n"
 		"- emotions\n- behaviors\n- personal\n- professional\n- habits\n- skills_tools\n- projects\n- relationships\n- learning_journal\n- other\n"
+		"If the query is empty, categorize candidates into the buckets based on their content and metadata (do not drop items unless they fit nowhere; use 'other').\n"
 		"Return strict JSON with keys exactly as above. For each key, return an array of memory ids from the candidates (do not invent ids).\n"
-		"Favor precision but include relevant context. Do not exceed 10 items per category."
+		"Favor precision but include relevant context. Do not exceed 25 items per category."
 	)
-	payload = {"query": body.query, "candidates": candidates}
+	payload = {"query": (body.query or ""), "candidates": candidates}
 	resp = _call_llm_json(SYSTEM_PROMPT, payload)
 	if not isinstance(resp, dict):
 		resp = {}
 
 	# Helper to map ids -> RetrieveItem
-	id_to_item = {r["id"]: r for r in results}
+	id_to_item = {r["id"]: r for r in all_results}
 	def build_items(id_list: List[str]) -> List[RetrieveItem]:
 		items: List[RetrieveItem] = []
 		for _id in id_list or []:

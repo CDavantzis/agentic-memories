@@ -13,6 +13,8 @@ Guidelines (recall-first):
 - Also worthy: time-bound next_action (store short-term).
 - Not worthy alone: greetings, meta-chatter, filler.
 - English only.
+Edge cases:
+- If the message contains multiple preferences and some are new while others are duplicates, it is still memory-worthy (extract the new ones only).
 """.strip()
 
 
@@ -81,6 +83,32 @@ Instructions:
 - Relationships: capture closeness and "getting to know someone"; include helpful notes.
 - Learning_journal: capture active learning, goals, progress level, recent practice.
 
+EXISTING MEMORY CONTEXT (IMPORTANT):
+- You will be provided with existing relevant memories for context.
+- Compare new information with existing memories to avoid duplicates.
+- If new information updates or contradicts existing memories, extract the updated version.
+- If information is already captured in existing memories, do NOT extract it again.
+- Focus on NEW information that adds value beyond what's already stored.
+
+PREFERENCE DEDUPLICATION VS ADDITION (IMPORTANT):
+- Treat paraphrases/synonyms of an existing preference as duplicates (skip).
+- Extract NEW preferences that are distinct topics or subgenres (e.g., mystery, thrillers) even if a related preference exists (e.g., sci-fi).
+- If a single utterance contains multiple distinct preferences, output one memory per distinct preference.
+- Do NOT merge multiple preferences into one sentence.
+- Examples:
+  * Existing: "User loves sci-fi books." New: "I also enjoy mystery novels and thrillers." → Extract both:
+    - "User enjoys mystery novels."
+    - "User enjoys thrillers."
+  * Existing: "User loves sci-fi books." New: "I am a fan of science fiction books." → Do NOT extract (duplicate).
+
+MULTIPLE PREFERENCES PARSING (STRICT):
+- When the user lists multiple preferences in a single sentence, split them and produce separate items.
+- Split on commas and coordinating conjunctions ("and", "or"). Trim modifiers like "novels", "books" when redundant.
+- Keep genre/topic terms as the nucleus (e.g., "mystery", "thrillers", "fantasy", "romance", "science fiction").
+- Each extracted item MUST be an atomic sentence: "User enjoys <genre>." or "User loves <genre>."
+- If any extracted item matches an existing memory by meaning (synonym/paraphrase), skip only that item; keep the others.
+- Common preference categories (non-exhaustive, for guidance only): sci-fi/science fiction, fantasy, mystery, thrillers, romance, historical fiction, nonfiction, biography, history, technology, programming, cooking, travel, jazz, rock, classical, coffee, tea.
+
 CONTENT NORMALIZATION RULES (CRITICAL):
 - Content MUST begin with the literal prefix "User ".
 - Convert first-person statements to third-person:
@@ -103,7 +131,15 @@ Examples of proper normalization:
 - "I run 3 times a week" → "User runs 3 times a week."
 - "The user prefers coffee" → "User prefers coffee."
 
-Time-bound → short-term (ttl set); stable → semantic; no duplicates; STRICT JSON.
+Worked preference examples (dedup vs addition):
+- Existing: "User loves sci-fi books." New: "I also enjoy mystery novels and thrillers." → Output:
+  [
+    {"content": "User enjoys mystery novels.", "type": "explicit", "layer": "semantic", "ttl": null, "confidence": 0.9, "tags": ["preferences"]},
+    {"content": "User enjoys thrillers.", "type": "explicit", "layer": "semantic", "ttl": null, "confidence": 0.9, "tags": ["preferences"]}
+  ]
+- Existing: "User loves sci-fi books." New: "I'm a fan of science fiction books." → Output: [] (duplicate)
+
+Time-bound → short-term (ttl set); stable → semantic; avoid duplicates; STRICT JSON.
 """.strip()
 
 

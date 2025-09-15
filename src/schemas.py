@@ -33,6 +33,9 @@ class StoreResponse(BaseModel):
 	ids: List[str]
 	summary: Optional[str] = None
 	memories: Optional[List[StoreMemoryItem]] = None
+	duplicates_avoided: int = 0
+	updates_made: int = 0
+	existing_memories_checked: int = 0
 
 
 class RetrieveItem(BaseModel):

@@ -10,6 +10,7 @@ from langgraph.graph import END, StateGraph
 from src.services.prompts import WORTHINESS_PROMPT, EXTRACTION_PROMPT
 from src.schemas import TranscriptRequest
 from src.services.extract_utils import _call_llm_json
+from src.services.memory_context import get_relevant_existing_memories, format_memories_for_llm_context
 
 
 def build_extraction_graph() -> StateGraph:
@@ -26,8 +27,20 @@ def build_extraction_graph() -> StateGraph:
 		return "extract" if state.get("worthy") else END
 
 	def node_extract(state: Dict[str, Any]) -> Dict[str, Any]:
-		payload = {"history": state["history"][-6:]}
-		items = _call_llm_json(EXTRACTION_PROMPT, payload, expect_array=True) or []
+		# Get existing memories for context
+		existing_memories = state.get("existing_memories", [])
+		existing_context = format_memories_for_llm_context(existing_memories)
+		
+		# Create enhanced payload with existing memory context
+		payload = {
+			"history": state["history"][-6:],
+			"existing_memories_context": existing_context
+		}
+		
+		# Enhanced extraction prompt with context
+		enhanced_prompt = f"{EXTRACTION_PROMPT}\n\n{existing_context}\n\nBased on the existing memories above, extract only NEW information that adds value."
+		
+		items = _call_llm_json(enhanced_prompt, payload, expect_array=True) or []
 		state["items"] = items
 		return state
 
@@ -41,7 +54,16 @@ def build_extraction_graph() -> StateGraph:
 
 def run_extraction_graph(request: TranscriptRequest) -> Dict[str, Any]:
 	graph = build_extraction_graph()
-	state: Dict[str, Any] = {"history": [m.model_dump() for m in request.history]}
+	
+	# Get relevant existing memories for context
+	existing_memories = get_relevant_existing_memories(request)
+	
+	# Initialize state with conversation history and existing memories
+	state: Dict[str, Any] = {
+		"history": [m.model_dump() for m in request.history],
+		"existing_memories": existing_memories
+	}
+	
 	result = graph.compile().invoke(state)
 	return result
 
