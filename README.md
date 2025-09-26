@@ -23,6 +23,11 @@ A modular, scalable memory system that extracts, stores, retrieves, and maintain
   - [Phase 4: User Identification and Interfaces](#phase-4-user-identification-and-interfaces)
   - [Phase 5: Forget Module and Maintenance](#phase-5-forget-module-and-maintenance)
   - [Phase 6: Security, Testing, Optimization, and Deployment](#phase-6-security-testing-optimization-and-deployment)
+  - [Phase 7: Web UI and Developer Console](#phase-7-web-ui-and-developer-console)
+    - [Subphase 7.1: Scaffolding, Health, and Retrieve (empty query)](#subphase-71-scaffolding-health-and-retrieve-empty-query)
+    - [Subphase 7.2: Store Transcript and Memory Browser](#subphase-72-store-transcript-and-memory-browser)
+    - [Subphase 7.3: Structured Retrieve and Debug Tools](#subphase-73-structured-retrieve-and-debug-tools)
+    - [Subphase 7.4: Polish, Accessibility, and Playwright E2E](#subphase-74-polish-accessibility-and-playwright-e2e)
 - [Milestones and Timeline](#milestones-and-timeline)
 
 ## Quickstart
@@ -226,6 +231,75 @@ Targets: unit, integration, and E2E (>80% coverage), including multi‑user isol
 
 ## Phased Build Plan
 Iterative development using Cursor. Each phase lists objective, tasks, deliverables, dependencies, and a sample prompt.
+
+### Phase 7: Web UI and Developer Console (1-2 weeks)
+Objective: Provide a simple, beautiful, and productive UI for interacting with the APIs without altering backend contracts. Focus on fast iteration, observability, and zero-config local use against a running Docker deployment.
+
+Subphases:
+
+#### Subphase 7.1: Scaffolding, Health, and Retrieve (empty query)
+Objective: Establish the UI skeleton and validate connectivity to the running API; enable core retrieval flows including empty `query` path.
+
+Tasks:
+- Create React + Vite + TypeScript app with Tailwind CSS and Radix UI primitives.
+- Configure `VITE_API_BASE_URL` (fallback to `/`). Add `.env.example` for UI.
+- Global layout: top bar with environment indicator and `user_id` selector (persist to URL + localStorage, default `test_user_22`).
+- Health screen: call `GET /health` (and optionally `/health/full` when available); show status cards.
+- Retrieve screen: form with `user_id` (required) and optional `query`, `layer`, `type`, `limit`, `offset`; results list with score and metadata chips; raw JSON toggle; supports empty `query` to list all.
+- API client: React Query hooks with retries and error toasts; shared headers; timing metrics per call.
+
+Deliverables:
+- `ui/` project scaffold; working Health and Retrieve screens.
+- Docs for `VITE_API_BASE_URL` and local run.
+
+Cursor Prompt:
+"Scaffold a React + Vite + TS app under `ui/` with Tailwind and Radix. Add Health and Retrieve screens calling `/v1/retrieve` with required `user_id` and optional `query`. Persist `user_id` in URL and localStorage."
+
+#### Subphase 7.2: Store Transcript and Memory Browser
+Objective: Enable storing conversations and browsing all memories for a user.
+
+Tasks:
+- Store Transcript screen: multi-turn composer (append user/assistant turns), submit to `POST /v1/store` with `user_id`, show extracted memories and metrics (`duplicates_avoided`, `updates_made`, `existing_memories_checked`).
+- Memory Browser screen: paginated table/list of all memories for a `user_id`; filters by `layer`, `type`; copy ID; export JSON/CSV; raw JSON toggle per row.
+- Utilities: clipboard copy, JSON viewer component, date/time formatting.
+
+Deliverables:
+- Store flow wired with response rendering and metrics chips.
+- Browser with pagination, filters, and export.
+
+Cursor Prompt:
+"Add Store Transcript and Memory Browser screens. POST `/v1/store` renders extracted memories and three metrics. Browser lists all memories for `user_id` with filters and pagination, plus export and copy."
+
+#### Subphase 7.3: Structured Retrieve and Debug Tools
+Objective: Visualize LLM-organized retrieval and provide developer observability.
+
+Tasks:
+- Structured Retrieve screen: call `POST /v1/retrieve/structured` with `user_id` and optional `query` (allow empty to categorize ALL). Render category sections with counts; collapsible accordions; raw JSON view.
+- Developer Console panel (toggle): timeline of last N API calls with status, duration, request/response sizes; copy request/response; redaction for secrets.
+- Advanced filters UI: add query param controls for `layer`, `type`, `limit`, `offset` across relevant screens.
+
+Deliverables:
+- Structured categories UI with stable layout and JSON toggle.
+- Developer Console panel integrated globally.
+
+Cursor Prompt:
+"Implement Structured Retrieve UI for `/v1/retrieve/structured`, rendering fixed categories and handling empty `query` by categorizing all memories. Add a developer console panel that logs API calls with durations and allows copying."
+
+#### Subphase 7.4: Polish, Accessibility, and Playwright E2E
+Objective: Make the UI accessible, resilient, and covered by E2E tests.
+
+Tasks:
+- Accessibility: keyboard navigation, focus rings, color contrast; aria labels on interactive elements; screen-reader-friendly JSON sections.
+- Error/empty states: friendly guidance and sample payloads; debounced inputs; disable submit while in-flight.
+- Testing: MSW for integration tests; Playwright E2E against deployed API (reuse existing Docker stack). CI job to build UI and run tests.
+- Deployment: `vite build`; serve static assets from FastAPI at `/static/ui` or via separate Nginx container. Add compose override example.
+
+Deliverables:
+- Playwright E2E suite covering Health, Retrieve (empty & non-empty query), Store, Structured.
+- Documented deployment options and CI integration.
+
+Cursor Prompt:
+"Add Playwright E2E tests for Health, Retrieve (empty and non-empty), Store, and Structured screens. Configure CI to run MSW-based integration tests and Playwright against a running API. Provide a FastAPI static-files option for serving the built UI."
 
 ### Phase 1: Project Setup and Core Models (1-2 days)
 Objective: Establish the foundation with repo structure, dependencies, and data models.
@@ -571,6 +645,18 @@ services:
       - "8080:8080"
     depends_on:
       - redis
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
+    image: agentic-memories-ui:local
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -598,6 +684,7 @@ services:
 - [x] Phase 4 — Auth & Interfaces (user_id mandatory, context-aware extraction, optional retrieval query)
 - [ ] Phase 5 — Forgetting & Maintenance
 - [ ] Phase 6 — Security, Testing, Deployment
+- [ ] Phase 7 — Web UI and Developer Console (Subphases 7.1–7.4)
 - [x] API Contracts implemented
 - [x] Docker Compose validated locally
 - [ ] Metrics & dashboards in place
@@ -620,6 +707,23 @@ docker build -t agentic-memories:local .
 docker compose up -d --build
 ```
 API: http://localhost:8080. ChromaDB: `http://${CHROMA_HOST:-127.0.0.1}:${CHROMA_PORT:-8000}` (external).
+
+### Web UI
+- Local development (requires Node 18+):
+  ```bash
+  cd ui
+  npm install
+  # optionally set API base, defaults to http://localhost:8080
+  echo "VITE_API_BASE_URL=http://localhost:8080" > .env  # or export before running
+  npm run dev
+  # open http://localhost:5173
+  ```
+- Docker (production build via Nginx):
+  ```bash
+  # builds UI and API; UI at http://localhost:5173
+  docker compose up -d --build
+  ```
+- Pages: Health, Retrieve (supports empty query), Store (shows extraction metrics), Structured (categorizes all when query empty), Browser (paginate/filter). A Developer Console logs API calls and latencies.
 
 #### Quick curl checks
 ```bash

@@ -15,6 +15,20 @@ services:
       - "8080:8080"
     depends_on:
       - redis
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+      args:
+        # The UI is built as static assets; at build time we set the API base
+        # so the compiled app uses the correct origin in production.
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
+    image: agentic-memories-ui:local
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - api
   redis:
     image: redis:7-alpine
     restart: unless-stopped

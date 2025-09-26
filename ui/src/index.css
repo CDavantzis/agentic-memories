@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --accent: #2563eb;
+}
+
+body { @apply bg-neutral-50 text-neutral-900; }
+
+

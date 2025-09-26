@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import FastAPI, Query, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from os import getenv
 
 from src.schemas import (
 	ForgetRequest,
@@ -25,6 +27,25 @@ from src.services.retrieval import search_memories
 from src.services.extract_utils import _call_llm_json
 
 app = FastAPI(title="Agentic Memories API", version="0.1.0")
+
+# CORS: allow UI origin (dev server and dockerized UI)
+_ui_origin = getenv("UI_ORIGIN")
+allow_origins = [
+	"http://localhost:5173",
+	"http://127.0.0.1:5173",
+    "http://localhost",
+    "http://127.0.0.1",
+]
+if _ui_origin and _ui_origin not in allow_origins:
+	allow_origins.append(_ui_origin)
+
+app.add_middleware(
+	CORSMiddleware,
+	allow_origins=allow_origins + ["http://localhost:8080", "http://127.0.0.1:8080"],
+	allow_credentials=False,
+	allow_methods=["*"],
+	allow_headers=["*"]
+)
 
 
 @app.on_event("startup")
