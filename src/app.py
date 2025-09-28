@@ -35,13 +35,24 @@ allow_origins = [
 	"http://127.0.0.1:5173",
     "http://localhost",
     "http://127.0.0.1",
+	"http://192.168.1.220",
+    "http://192.168.1.220:5173",
 ]
 if _ui_origin and _ui_origin not in allow_origins:
 	allow_origins.append(_ui_origin)
 
+# Broadly allow common local network origins via regex (HTTP/HTTPS, any port)
+# - 127.0.0.1 / localhost
+# - 192.168.x.x
+# - 10.x.x.x
+# - 172.16.x.x - 172.31.x.x
+# - memoryforge.io and subdomains
+LAN_ORIGIN_REGEX = r"^https?://(localhost|127\\.0\\.0\\.1|192\\.168\\.\\d{1,3}\\.\\d{1,3}|10\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}|172\\\.(1[6-9]|2[0-9]|3[0-1])\\.\\d{1,3}\\.\\d{1,3}|([a-zA-Z0-9-]+\\.)*memoryforge\\.io)(:\\d+)?$"
+
 app.add_middleware(
 	CORSMiddleware,
-	allow_origins=allow_origins + ["http://localhost:8080", "http://127.0.0.1:8080"],
+    allow_origins=allow_origins + ["http://localhost:8080", "http://127.0.0.1:8080", "https://memoryforge.io"],
+	allow_origin_regex=LAN_ORIGIN_REGEX,
 	allow_credentials=False,
 	allow_methods=["*"],
 	allow_headers=["*"]
@@ -236,7 +247,7 @@ def retrieve_structured(body: StructuredRetrieveRequest) -> StructuredRetrieveRe
 					layer=src["metadata"].get("layer", "semantic"),
 					type=src["metadata"].get("type", "explicit"),
 					score=float(src.get("score", 0.0)),
-					metadata=src.get("metadata", {}),
+					#metadata=src.get("metadata", {}),
 				)
 			)
 		return items

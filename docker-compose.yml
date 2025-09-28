@@ -22,7 +22,8 @@ services:
       args:
         # The UI is built as static assets; at build time we set the API base
         # so the compiled app uses the correct origin in production.
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
+        # Leave blank to let UI auto-derive http(s)://<host>:8080 at runtime
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
     image: agentic-memories-ui:local
     restart: unless-stopped
     ports:
