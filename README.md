@@ -81,6 +81,9 @@ pip install -r requirements.txt
   - `CHROMA_PORT=8000`
   - `CHROMA_TENANT=agentic-memories`
   - `CHROMA_DATABASE=memories`
+ - Cloudflare Access (optional; for auth):
+   - `CF_ACCESS_AUD=<Access App Audience UUID>`
+   - `CF_ACCESS_TEAM_DOMAIN=<team subdomain, e.g., memoryforge>`
 
 You can place these in `.env` (the app auto-loads it):
 ```bash
@@ -170,6 +173,7 @@ Pydantic `Memory` (planned):
 - `GET /retrieve` — Query params: `query`, `user_id` (required), optional `layer`, `type`; returns ranked memories
 - `GET /retrieve` — Query params: `user_id` (required), optional `query`, `layer`, `type`; returns ranked memories. If `query` is omitted or empty, all memories for the user are returned.
 - `POST /retrieve/structured` — LLM-organized, category-based retrieval (emotions, behaviors, personal, professional, habits, skills_tools, projects, relationships, learning_journal, other). If `query` is empty, the service aggregates ALL memories for the user and categorizes them.
+- `GET /v1/me` — Returns the authenticated user's identity (when Cloudflare Access is configured).
 - `POST /forget` — Manually trigger pruning/expiration
 - `POST /maintenance` — Trigger scheduled jobs on demand
 
@@ -643,6 +647,8 @@ services:
       - CHROMA_TENANT=${CHROMA_TENANT:-agentic-memories}
       - CHROMA_DATABASE=${CHROMA_DATABASE:-memories}
       - REDIS_URL=redis://redis:6379/0
+      - CF_ACCESS_AUD=${CF_ACCESS_AUD}
+      - CF_ACCESS_TEAM_DOMAIN=${CF_ACCESS_TEAM_DOMAIN}
     ports:
       - "8080:8080"
     depends_on:
@@ -652,11 +658,11 @@ services:
       context: ./ui
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
     image: agentic-memories-ui:local
     restart: unless-stopped
     ports:
-      - "5173:80"
+      - "80:80"
     depends_on:
       - api
   redis:
@@ -727,6 +733,53 @@ API: http://localhost:8080. ChromaDB: `http://${CHROMA_HOST:-127.0.0.1}:${CHROMA
   ```
 - Pages: Health, Retrieve (supports empty query), Store (shows extraction metrics), Structured (categorizes all when query empty), Browser (paginate/filter). A Developer Console logs API calls and latencies.
 
+#### Deployment modes & API base resolution
+- LAN/local: UI targets `http://<host>:8080`.
+- Public (Cloudflare): UI uses same-origin `${location.origin}/api`, with Nginx proxying `/api/*` → API.
+- Override with `VITE_API_BASE_URL` if needed.
+
+Nginx proxy in `ui/nginx.conf`:
+```nginx
+location /api/ {
+    proxy_pass http://api:8080/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Cf-Access-Jwt-Assertion $http_cf_access_jwt_assertion;
+    proxy_set_header Authorization $http_authorization;
+}
+```
+
+#### Logs & Tail
+Follow API logs and filter auth lines:
+```bash
+docker compose -f /home/ankit/dev/agentic-memories/docker-compose.yml logs -f --tail=200 api
+docker compose -f /home/ankit/dev/agentic-memories/docker-compose.yml logs -f --tail=200 api | stdbuf -o0 grep -i "\\[auth\\]"
+```
+
+### Cloudflare Access Integration
+The API validates Cloudflare Access JWTs and exposes identity via `GET /v1/me`.
+
+- Env vars:
+  - `CF_ACCESS_AUD`: Access app Audience (UUID)
+  - `CF_ACCESS_TEAM_DOMAIN`: Team domain (e.g., `memoryforge`)
+- Token sources accepted:
+  - Header: `Cf-Access-Jwt-Assertion`
+  - Cookie: `CF_Authorization` (or lowercase `cf_authorization`)
+  - Authorization header: `Bearer <token>`
+- Endpoint:
+  - `GET /v1/me`: returns `{ authenticated, sub, email, name, aud, exp, iss }`. Logs include `[auth]` cookie previews and verification status.
+- The UI proxy forwards these headers to the API.
+
+Troubleshooting:
+- If logs show missing CF envs, define `CF_ACCESS_AUD` and `CF_ACCESS_TEAM_DOMAIN` (see `env.example`).
+- To verify cookies arrive, hit `/v1/me` and watch for `[auth] cookies preview:`.
+
+### CORS Configuration
+The API permits local/LAN origins and `https://memoryforge.io` and subdomains via regex.
+
 #### Quick curl checks
 ```bash
 # Preference
@@ -772,6 +825,14 @@ curl -s -X POST http://localhost:8080/v1/store \
 - 2025-09-14: Phase 3 – Storage/Retrieval upgraded to Chroma v2 HTTP. Standardized collection per embedding dimension (`memories_3072`), serialized complex metadata (e.g., tags) as JSON strings, switched retrieval to local query embeddings, and added an LLM-powered structured retrieval endpoint `/v1/retrieve/structured`. Created tenant/database via v2 where required.
 
 - 2025-09-15: Retrieval updates
+- 2025-09-28: Web UI deployment, CORS, and Cloudflare Access
+  - UI API base auto-resolution: `host:8080` on LAN, same-origin `/api` on public; removed forcing `:8080` over HTTPS to fix SSL error.
+  - UI container now includes Nginx reverse proxy to route `/api/*` → API; `ui` service exposed on port 80.
+  - Implemented safe UUID fallback in UI when `crypto.randomUUID` is unavailable.
+  - Added CORS for `https://memoryforge.io` and subdomains; LAN origin regex.
+  - Retrieval: ensured optional `query` and full-user categorization in structured retrieval; fixed Chroma v2 `get()` include fields; neutral similarity for metadata-only retrieval.
+  - Cloudflare Access auth: verify token from header or `CF_Authorization` cookie; added `/v1/me` endpoint; structured `[auth]` logs; documented `CF_ACCESS_AUD` and `CF_ACCESS_TEAM_DOMAIN`.
+  - Docker Compose: added `ui` service; `VITE_API_BASE_URL` build arg optional; CF env vars passed to API.
   - `GET /v1/retrieve`: `query` is optional. When omitted/empty, retrieval uses metadata-only path to return all user memories; `user_id` always required.
   - `POST /v1/retrieve/structured`: If `query` is empty, the service aggregates ALL user memories (paged) and categorizes them; if present, focuses on relevancy to the query.
   - Chroma v2 `get`: request supported fields (`documents`, `metadatas`); IDs are mapped from the server response.

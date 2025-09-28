@@ -10,3 +10,4 @@ python-dotenv==1.0.1
 pytest==8.3.2
 langgraph==0.2.25
 langgraph-checkpoint==1.0.12
+python-jose[cryptography]==3.3.0

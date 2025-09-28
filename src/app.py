@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
+import logging
 from typing import List, Optional
 
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Header, Cookie, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from os import getenv
 
@@ -25,8 +26,48 @@ from src.services.extraction import extract_from_transcript
 from src.services.storage import upsert_memories
 from src.services.retrieval import search_memories
 from src.services.extract_utils import _call_llm_json
+from src.dependencies.cloudflare_access import verify_cf_access_token, extract_token_from_headers
 
 app = FastAPI(title="Agentic Memories API", version="0.1.0")
+logger = logging.getLogger("agentic_memories.api")
+if not logger.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s"))
+    logger.addHandler(_handler)
+logger.setLevel(logging.INFO)
+logger.propagate = False
+# Auth dependency: validate Cloudflare Access JWT if provided
+def get_identity(
+    cf_access_jwt_assertion: Optional[str] = Header(default=None),
+    authorization: Optional[str] = Header(default=None),
+    cf_authorization_cookie: Optional[str] = Cookie(default=None, alias="CF_Authorization"),
+    cf_authorization_cookie_lower: Optional[str] = Cookie(default=None, alias="cf_authorization"),
+    request: Request = None,
+) -> Optional[dict]:
+    # Debug: log cookies reaching the API (redacted)
+    try:
+        cookie_preview = {k: (v[:12] + f"...({len(v)}B)") for k, v in (request.cookies or {}).items()}
+        logger.info("[auth] cookies preview: %s", cookie_preview)
+    except Exception:
+        pass
+    headers = {}
+    if cf_access_jwt_assertion:
+        headers["cf-access-jwt-assertion"] = cf_access_jwt_assertion
+    if authorization:
+        headers["authorization"] = authorization
+    token = extract_token_from_headers(headers)
+    # Fallback to Cloudflare cookie (browser -> UI -> API)
+    if not token:
+        token = cf_authorization_cookie or cf_authorization_cookie_lower
+    if not token:
+        return None
+    try:
+        claims = verify_cf_access_token(token)
+        return claims
+    except Exception as exc:
+        # For now, treat invalid tokens as anonymous; endpoints may enforce later
+        logger.info("[auth] CF Access verification failed: %s", exc)
+        return None
 
 # CORS: allow UI origin (dev server and dockerized UI)
 _ui_origin = getenv("UI_ORIGIN")
@@ -69,6 +110,29 @@ def require_openai_key() -> None:
 @app.get("/health")
 def health() -> dict:
 	return {"status": "ok", "time": datetime.now(timezone.utc).isoformat()}
+@app.get("/v1/me")
+def me(identity: Optional[dict] = Depends(get_identity)) -> dict:
+    if identity is None:
+        return {"authenticated": False}
+    # Log key identity parameters for debugging
+    logger.info("[auth] Authenticated identity: sub=%s email=%s name=%s aud=%s exp=%s iss=%s",
+                identity.get("sub"),
+                identity.get("email"),
+                identity.get("name") or identity.get("common_name"),
+                identity.get("aud"),
+                identity.get("exp"),
+                identity.get("iss"))
+    # Useful fields from CF Access token
+    return {
+        "authenticated": True,
+        "sub": identity.get("sub"),
+        "email": identity.get("email"),
+        "name": identity.get("name") or identity.get("common_name"),
+        "id": identity.get("id"),
+        "aud": identity.get("aud"),
+        "exp": identity.get("exp"),
+        "iss": identity.get("iss"),
+    }
 
 
 @app.get("/health/full")

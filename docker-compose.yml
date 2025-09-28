@@ -11,6 +11,8 @@ services:
       - CHROMA_TENANT=agentic-memories
       - CHROMA_DATABASE=memories
       - REDIS_URL=redis://redis:6379/0
+      - CF_ACCESS_AUD=${CF_ACCESS_AUD}
+      - CF_ACCESS_TEAM_DOMAIN=${CF_ACCESS_TEAM_DOMAIN}
     ports:
       - "8080:8080"
     depends_on:
