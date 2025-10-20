@@ -76,22 +76,53 @@ def get_redis_url() -> Optional[str]:
 
 
 # =============================
+# External databases (storage)
+# =============================
+
+
+@lru_cache(maxsize=1)
+def get_timescale_dsn() -> Optional[str]:
+	return os.getenv("TIMESCALE_DSN", "postgresql://user:pass@localhost:5432/memories")
+
+
+@lru_cache(maxsize=1)
+def get_neo4j_uri() -> Optional[str]:
+	return os.getenv("NEO4J_URI", "bolt://localhost:7687")
+
+
+@lru_cache(maxsize=1)
+def get_neo4j_user() -> Optional[str]:
+	return os.getenv("NEO4J_USER", "neo4j")
+
+
+@lru_cache(maxsize=1)
+def get_neo4j_password() -> Optional[str]:
+	return os.getenv("NEO4J_PASSWORD", "password")
+
+
+# =============================
 # Extraction-related settings
 # =============================
 
 
 @lru_cache(maxsize=1)
 def get_extraction_model_name() -> str:
-    # Provider-aware default: OpenAI → gpt-4o, xAI → grok-4-fast-reasoning
+    # Provider-aware default: OpenAI → gpt-5, xAI → grok-4-fast-reasoning
     env_val = os.getenv("EXTRACTION_MODEL")
     if env_val and env_val.strip() != "":
         return env_val
     provider = get_llm_provider()
     if provider == "openai":
-        return "gpt-4o"
+        env_val = os.getenv("EXTRACTION_MODEL_OPENAI")
+        if env_val and env_val.strip() != "":
+            return env_val
+        return "gpt-5"
     if provider in {"xai", "grok"}:  # accept alias "grok" for backward compatibility
+        env_val = os.getenv("EXTRACTION_MODEL_XAI")
+        if env_val and env_val.strip() != "":
+            return env_val
         return "grok-4-fast-reasoning"
-    return "gpt-4o"
+    return "gpt-5"
 
 
 @lru_cache(maxsize=1)
@@ -156,9 +187,9 @@ def get_max_memories_per_request() -> int:
 @lru_cache(maxsize=1)
 def get_extraction_timeouts_ms() -> int:
 	try:
-		return int(os.getenv("EXTRACTION_TIMEOUT_MS", "8000"))
+		return int(os.getenv("EXTRACTION_TIMEOUT_MS", "180000"))
 	except ValueError:
-		return 8000
+		return 180000
 
 
 @lru_cache(maxsize=1)
@@ -179,3 +210,40 @@ def get_disable_heuristics() -> bool:
 	# When true, heuristic extraction is hard-disabled (used to force LLM-only).
 	# Tests can override via env to re-enable heuristics.
 	return os.getenv("EXTRACTION_DISABLE_HEURISTICS", "true").lower() in {"1", "true", "yes", "on"}
+
+
+@lru_cache(maxsize=1)
+def is_scheduled_maintenance_enabled() -> bool:
+	"""Control daily scheduled maintenance (compaction) via env.
+
+	Primary flag: SCHEDULED_MAINTENANCE_ENABLED (default: true)
+	Legacy alias supported: SCHEDULED_EXTRACTION_ENABLED
+	"""
+	val = os.getenv("SCHEDULED_MAINTENANCE_ENABLED")
+	if val is None:
+		alias = os.getenv("SCHEDULED_EXTRACTION_ENABLED")
+		if alias is None:
+			return True
+		return alias.strip().lower() in {"1", "true", "yes", "on"}
+	return val.strip().lower() in {"1", "true", "yes", "on"}
+
+
+# Langfuse Configuration
+def get_langfuse_public_key() -> str:
+	"""Get Langfuse public key from environment."""
+	return os.getenv("LANGFUSE_PUBLIC_KEY", "")
+
+
+def get_langfuse_secret_key() -> str:
+	"""Get Langfuse secret key from environment."""
+	return os.getenv("LANGFUSE_SECRET_KEY", "")
+
+
+def get_langfuse_host() -> str:
+	"""Get Langfuse host URL from environment."""
+	return os.getenv("LANGFUSE_HOST", "https://us.cloud.langfuse.com")
+
+
+def is_langfuse_enabled() -> bool:
+	"""Check if Langfuse tracing is enabled."""
+	return bool(get_langfuse_public_key() and get_langfuse_secret_key())

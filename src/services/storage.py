@@ -6,11 +6,14 @@ import time
 import uuid
 import json
 
+import logging
 from src.dependencies.chroma import get_chroma_client
 from src.models import Memory
+from src.services.retrieval import _standard_collection_name
 
 
 COLLECTION_NAME = "memories"
+logger = logging.getLogger("agentic_memories.storage")
 
 
 def init_chroma_collection(name: str = COLLECTION_NAME) -> Any:
@@ -41,7 +44,7 @@ def _build_metadata(memory: Memory) -> Dict[str, Any]:
 	if memory.ttl is not None:
 		meta["ttl_epoch"] = _ttl_epoch_from_ttl(memory.ttl)
 	# Pass-through structured fields where present
-	for key in ("project", "relationship", "learning_journal"):
+	for key in ("project", "relationship", "learning_journal", "portfolio"):
 		if key in memory.metadata:
 			if isinstance(memory.metadata[key], (list, dict)):
 				meta[key] = json.dumps(memory.metadata[key])  # Serialize if non-scalar
@@ -52,6 +55,7 @@ def _build_metadata(memory: Memory) -> Dict[str, Any]:
 
 def upsert_memories(user_id: str, memories: List[Memory]) -> List[str]:
 	if not memories:
+		logger.info("[storage.upsert] user_id=%s count=%s (noop)", user_id, 0)
 		return []
 	for m in memories:
 		if m.user_id != user_id:
@@ -66,16 +70,29 @@ def upsert_memories(user_id: str, memories: List[Memory]) -> List[str]:
 		mem_id = m.id or f"mem_{uuid.uuid4().hex[:12]}"
 		ids.append(mem_id)
 		documents.append(m.content)
-		embeddings.append(m.embedding or [])
+		
+		# Ensure embedding is properly handled
+		embedding = m.embedding or []
+		if not embedding:
+			# Generate embedding if missing
+			try:
+				from src.services.embedding_utils import generate_embedding
+				embedding = generate_embedding(m.content) or []
+			except Exception as exc:
+				logger.warning("[storage.upsert.embedding_error] user_id=%s id=%s error=%s", user_id, mem_id, exc)
+				embedding = []
+		
+		embeddings.append(embedding)
 		metadatas.append(_build_metadata(m))
+	logger.info("[storage.upsert.prepare] user_id=%s ids=%s", user_id, len(ids))
 
-	# Use a collection name that encodes the embedding dimension to avoid mismatch
-	dim = len(embeddings[0]) if embeddings and embeddings[0] else 0
-	collection_name = f"{COLLECTION_NAME}_{dim}" if dim > 0 else COLLECTION_NAME
+	# Use standard collection naming to ensure consistency with retrieval
+	collection_name = _standard_collection_name()
 	collection = init_chroma_collection(collection_name)
 
 	# Chroma upsert
 	collection.upsert(ids=ids, documents=documents, embeddings=embeddings, metadatas=metadatas)  # type: ignore[attr-defined]
+	logger.info("[storage.upsert.done] user_id=%s count=%s collection=%s", user_id, len(ids), collection_name)
 	return ids
 
 

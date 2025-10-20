@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import hashlib
 import json
 
+import logging
 from src.dependencies.chroma import get_chroma_client
 from src.dependencies.redis_client import get_redis_client
 from src.config import get_embedding_model_name
@@ -12,6 +13,7 @@ from src.services.embedding_utils import generate_embedding
 
 
 COLLECTION_NAME = "memories"
+logger = logging.getLogger("agentic_memories.retrieval")
 
 
 def _embedding_dim_from_model(model: str) -> int:
@@ -41,6 +43,11 @@ def _get_collection() -> Any:
 	client = get_chroma_client()
 	if client is None:
 		raise RuntimeError("Chroma client not available")
+	
+	# Ensure Chroma is healthy before making requests
+	if not client.health_check():
+		raise RuntimeError("Chroma database is not available or not ready")
+	
 	return client.get_collection(_standard_collection_name())  # type: ignore[attr-defined]
 
 
@@ -70,6 +77,7 @@ def search_memories(
 	filters = filters or {}
 	redis = get_redis_client()
 	use_cache = redis is not None and (filters.get("layer") == "short-term")
+	logger.info("[retrieve] user_id=%s query_len=%s filters=%s limit=%s offset=%s use_cache=%s", user_id, len(query or ""), list(filters.keys()), limit, offset, use_cache)
 
 	cache_key = None
 	if use_cache:
@@ -78,9 +86,16 @@ def search_memories(
 		cached = redis.get(cache_key)
 		if cached:
 			data = json.loads(cached)
+			logger.info("[retrieve.cache.hit] user_id=%s key=%s count=%s", user_id, cache_key, len(data.get("results", [])))
 			return data["results"], data.get("total", len(data["results"]))
 
-	collection = _get_collection()
+	try:
+		collection = _get_collection()
+		logger.info("[retrieve.chroma] collection=%s where_keys=%s", getattr(collection, "name", "?"), [])
+	except RuntimeError as e:
+		# Chroma is not available, return empty results
+		logger.warning("Chroma not available: %s", e)
+		return [], 0
 
 	# Basic metadata filter
 	where: Dict[str, Any] = {"user_id": user_id}
@@ -130,10 +145,12 @@ def search_memories(
 	items.sort(key=lambda x: x["score"], reverse=True)
 	total = len(items)
 	page = items[offset : offset + limit]
+	logger.info("[retrieve.results] user_id=%s returned=%s total=%s", user_id, len(page), total)
 
 	# Cache short-term
 	if use_cache and cache_key and redis is not None:
 		redis.setex(cache_key, 180, json.dumps({"results": page, "total": total}))
+		logger.info("[retrieve.cache.store] user_id=%s key=%s count=%s ttl=%s", user_id, cache_key, len(page), 180)
 
 	return page, total
 
