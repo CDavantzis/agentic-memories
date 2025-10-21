@@ -687,7 +687,13 @@ def retrieve(
 @app.post("/v1/retrieve", response_model=PersonaRetrieveResponse)
 def retrieve_persona(body: PersonaRetrieveRequest) -> PersonaRetrieveResponse:
         metadata_filters: Dict[str, Any] = dict(body.filters or {})
-        persona_context = body.persona_context.dict() if body.persona_context else {}
+        if body.persona_context:
+                if hasattr(body.persona_context, "model_dump"):
+                        persona_context = body.persona_context.model_dump()
+                else:
+                        persona_context = body.persona_context.dict()
+        else:
+                persona_context = {}
         limit_with_offset = body.limit + body.offset
         persona_results = _persona_copilot.retrieve(
                 user_id=body.user_id,
