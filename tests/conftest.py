@@ -1,7 +1,24 @@
 from importlib import reload
+import warnings
 from types import SimpleNamespace
 from typing import Dict, Set
 from unittest.mock import MagicMock
+
+warnings.filterwarnings(
+    "ignore",
+    category=PendingDeprecationWarning,
+    module=r"starlette\\.formparsers",
+)
+warnings.filterwarnings(
+    "ignore",
+    category=PendingDeprecationWarning,
+    message=r"Please use `import python_multipart` instead\.",
+)
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    module=r"pydantic\\.v1\\.typing",
+)
 
 import pytest
 from fastapi.testclient import TestClient
