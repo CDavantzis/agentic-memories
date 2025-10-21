@@ -169,3 +169,59 @@ def test_fetch_memories_formats_results_without_state() -> None:
 
     assert memory_ids == ["memory-1", "memory-2"]
 
+
+def test_scoped_subscription_filters_other_conversations() -> None:
+    captured: List[str] = []
+
+    def listener(injection):
+        captured.append(injection.metadata.get("conversation_id", ""))
+
+    def search_stub(user_id: str, _query: str, _filters, _limit: int, _offset: int):
+        return (
+            [
+                {
+                    "id": f"mem-{user_id}",
+                    "content": "context",
+                    "score": 0.9,
+                    "metadata": {"layer": "semantic"},
+                }
+            ],
+            1,
+        )
+
+    orchestrator = AdaptiveMemoryOrchestrator(
+        persist_fn=PersistRecorder(),
+        search_fn=search_stub,
+        retrieval_policy=RetrievalPolicy(min_similarity=0.1),
+    )
+
+    async def scenario() -> None:
+        subscription = orchestrator.subscribe_injections(
+            listener, conversation_id="conv-a"
+        )
+        try:
+            await orchestrator.stream_message(
+                MessageEvent(
+                    conversation_id="conv-a",
+                    message_id="a-1",
+                    role=MessageRole.USER,
+                    content="hi",
+                    metadata={"user_id": "user-a"},
+                )
+            )
+            await orchestrator.stream_message(
+                MessageEvent(
+                    conversation_id="conv-b",
+                    message_id="b-1",
+                    role=MessageRole.USER,
+                    content="hello",
+                    metadata={"user_id": "user-b"},
+                )
+            )
+        finally:
+            subscription.close()
+
+    asyncio.run(scenario())
+
+    assert captured == ["conv-a"]
+

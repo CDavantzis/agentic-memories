@@ -195,7 +195,9 @@ async def stream_orchestrator_message(body: OrchestratorMessageRequest) -> Orche
     def _listener(injection: MemoryInjection) -> None:
         captured.append(injection)
 
-    subscription = _memory_orchestrator.subscribe_injections(_listener)
+    subscription = _memory_orchestrator.subscribe_injections(
+        _listener, conversation_id=body.conversation_id
+    )
     try:
         timestamp = body.timestamp or datetime.now(timezone.utc)
         event = MessageEvent(

@@ -486,11 +486,14 @@ async def on_memory(injection):
     # Push injected memory to your LLM context window
     await chatbot.push_memory(injection.content)
 
-subscription = orchestrator.subscribe_injections(on_memory)
+conversation_id = session.conversation_id
+subscription = orchestrator.subscribe_injections(
+    on_memory, conversation_id=conversation_id
+)
 try:
     for idx, turn in enumerate(conversation_stream()):
         event = MessageEvent(
-            conversation_id=turn["conversation_id"],
+            conversation_id=conversation_id,
             message_id=turn.get("id"),
             role=MessageRole(turn["role"]),
             content=turn["content"],
@@ -501,6 +504,11 @@ finally:
     await orchestrator.shutdown()
     subscription.close()
 ```
+
+Always scope the subscription with the active `conversation_id` so only memories
+for that chat stream are delivered back to your runtime. This prevents
+concurrent sessions from surfacing unrelated injections when multiple users are
+connected simultaneously.
 
 ### **Batch ingestion from existing transcripts**
 

@@ -123,8 +123,23 @@ class MemoryOrchestratorClient(Protocol):
     async def stream_message(self, event: MessageEvent) -> None:
         """Forward a single message event to the orchestrator."""
 
-    def subscribe_injections(self, listener: InjectionListener) -> InjectionSubscription:
-        """Register a listener that will receive memory injections."""
+    def subscribe_injections(
+        self,
+        listener: InjectionListener,
+        *,
+        conversation_id: str | None = None,
+    ) -> InjectionSubscription:
+        """Register a listener that will receive memory injections.
+
+        Parameters
+        ----------
+        listener:
+            Callback that receives ``MemoryInjection`` payloads.
+        conversation_id:
+            Optional conversation scope. When provided the orchestrator will only
+            deliver injections produced for the matching conversation, preventing
+            cross-session leakage when multiple chat sessions run concurrently.
+        """
 
     async def flush(self) -> None:
         """Ensure queued ingestions and retrieval work complete."""

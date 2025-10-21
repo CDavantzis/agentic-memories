@@ -36,27 +36,37 @@ class ChatRuntimeBridge:
     async def ingest_transcript(self, request: TranscriptRequest) -> None:
         """Stream a batch TranscriptRequest through the orchestrator."""
 
-        metadata = {"user_id": request.user_id}
-
-        for index, message in enumerate(request.history):
-            event = _event_from_message(request.user_id, index, message, metadata)
-            await self._orchestrator.stream_message(event)
-
-        await self._orchestrator.flush()
+        conversation_id, metadata = _conversation_context(request)
+        await self._stream_transcript(conversation_id, metadata, request.history)
 
     async def run_with_injections(self, request: TranscriptRequest) -> List[MemoryInjection]:
         """Stream the transcript and return any injections emitted."""
 
+        conversation_id, metadata = _conversation_context(request)
         buffer = InjectionBuffer()
-        subscription = self._orchestrator.subscribe_injections(buffer.listener)
+        subscription = self._orchestrator.subscribe_injections(
+            buffer.listener, conversation_id=conversation_id
+        )
         try:
-            await self.ingest_transcript(request)
+            await self._stream_transcript(conversation_id, metadata, request.history)
         finally:
             subscription.close()
         return buffer.items
 
     async def shutdown(self) -> None:
         await self._orchestrator.shutdown()
+
+    async def _stream_transcript(
+        self,
+        conversation_id: str,
+        metadata: dict[str, str],
+        history: List[Message],
+    ) -> None:
+        for index, message in enumerate(history):
+            event = _event_from_message(conversation_id, index, message, metadata)
+            await self._orchestrator.stream_message(event)
+
+        await self._orchestrator.flush()
 
 
 def _event_from_message(
@@ -77,4 +87,11 @@ def _event_from_message(
         metadata=metadata,
         timestamp=timestamp,
     )
+
+
+def _conversation_context(request: TranscriptRequest) -> tuple[str, dict[str, str]]:
+    metadata = {str(key): str(value) for key, value in (request.metadata or {}).items()}
+    metadata.setdefault("user_id", request.user_id)
+    conversation_id = metadata.get("conversation_id") or request.user_id
+    return conversation_id, metadata
 

@@ -45,7 +45,7 @@ class AdaptiveMemoryOrchestrator(MemoryOrchestratorClient):
         self._retrieval = RetrievalOrchestrator(retrieval_policy)
         self._persist = persist_fn or upsert_memories
         self._search = search_fn or search_memories
-        self._listeners: List[InjectionListener] = []
+        self._listeners: List[tuple[InjectionListener, str | None]] = []
         self._lock = asyncio.Lock()
         self._closed = False
 
@@ -88,12 +88,17 @@ class AdaptiveMemoryOrchestrator(MemoryOrchestratorClient):
         formatted = self._retrieval.format_results(conversation_id, results)
         return formatted[:limit]
 
-    def subscribe_injections(self, listener: InjectionListener) -> InjectionSubscription:
-        self._listeners.append(listener)
+    def subscribe_injections(
+        self,
+        listener: InjectionListener,
+        *,
+        conversation_id: str | None = None,
+    ) -> InjectionSubscription:
+        self._listeners.append((listener, conversation_id))
 
         def _close() -> None:
             try:
-                self._listeners.remove(listener)
+                self._listeners.remove((listener, conversation_id))
             except ValueError:
                 pass
 
@@ -149,7 +154,11 @@ class AdaptiveMemoryOrchestrator(MemoryOrchestratorClient):
         if not injections:
             return
         for injection in injections:
-            for listener in list(self._listeners):
+            metadata = injection.metadata or {}
+            injection_conversation = metadata.get("conversation_id")
+            for listener, scope in list(self._listeners):
+                if scope is not None and scope != injection_conversation:
+                    continue
                 try:
                     maybe_awaitable = listener(injection)
                     if asyncio.iscoroutine(maybe_awaitable):

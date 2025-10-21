@@ -33,6 +33,7 @@ def _install_stubbed_orchestrator(monkeypatch):
     monkeypatch.setattr(app_module, "_chat_runtime_bridge", bridge, raising=False)
     monkeypatch.setattr(app_module._memory_orchestrator, "_persist", _stub_persist)
     monkeypatch.setattr(app_module._memory_orchestrator, "_search", _stub_search)
+    monkeypatch.setattr(app_module, "is_llm_configured", lambda: True, raising=False)
     return app_module
 
 
