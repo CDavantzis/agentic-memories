@@ -14,7 +14,7 @@ def _stub_search(user_id: str, query: str, filters, limit: int, offset: int):  #
             {
                 "id": "mem-123",
                 "content": f"Context for {user_id}: {query}",
-                "score": 0.93,
+                "score": 0.1,
                 "metadata": {"layer": "semantic"},
             }
         ],

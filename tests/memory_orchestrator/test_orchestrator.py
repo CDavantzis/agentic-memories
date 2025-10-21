@@ -87,7 +87,7 @@ def test_retrieval_injections_respect_cooldown() -> None:
                 {
                     "id": "memory-1",
                     "content": "prior context",
-                    "score": 0.9,
+                    "score": 0.1,
                     "metadata": {"layer": "long-term"},
                 }
             ],
@@ -110,7 +110,7 @@ def test_retrieval_injections_respect_cooldown() -> None:
     )
 
     async def scenario() -> None:
-        sub = orchestrator.subscribe_injections(listener)
+        sub = orchestrator.subscribe_injections(listener, conversation_id="conv-1")
         try:
             await orchestrator.stream_message(_make_event(0))
             await orchestrator.stream_message(_make_event(1))
@@ -137,13 +137,13 @@ def test_fetch_memories_formats_results_without_state() -> None:
                 {
                     "id": "memory-1",
                     "content": "remember to hydrate",
-                    "score": 0.95,
+                    "score": 0.1,
                     "metadata": {"layer": "short-term"},
                 },
                 {
                     "id": "memory-2",
                     "content": "schedule meeting",
-                    "score": 0.91,
+                    "score": 0.2,
                     "metadata": {"layer": "semantic"},
                 },
             ],
@@ -182,7 +182,7 @@ def test_scoped_subscription_filters_other_conversations() -> None:
                 {
                     "id": f"mem-{user_id}",
                     "content": "context",
-                    "score": 0.9,
+                    "score": 0.1,
                     "metadata": {"layer": "semantic"},
                 }
             ],
