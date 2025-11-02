@@ -126,14 +126,22 @@ class AdaptiveMemoryOrchestrator(MemoryOrchestratorClient):
             raise RuntimeError("Memory orchestrator has been shut down")
 
     def _persist_batch(self, batch: IngestionBatch) -> None:
-        memory = batch.to_memory()
+        memories = batch.to_memories()
+        if not memories:
+            logger.debug(
+                "[orchestrator.persist.skip] conversation=%s user=%s reason=no_memories",
+                batch.conversation_id,
+                batch.user_id,
+            )
+            return
+        
         try:
-            ids = self._persist(batch.user_id, [memory])
+            ids = self._persist(batch.user_id, memories)
             logger.debug(
                 "[orchestrator.persist] conversation=%s user=%s count=%s ids=%s",
                 batch.conversation_id,
                 batch.user_id,
-                1,
+                len(memories),
                 list(ids),
             )
         except Exception:

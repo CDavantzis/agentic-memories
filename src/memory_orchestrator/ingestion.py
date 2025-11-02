@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional
 
 from src.models import Memory
+from src.schemas import TranscriptRequest, Message
+from src.config import is_llm_configured
 
 from .client_api import MessageEvent
 from .policies import IngestionPolicy
+
+logger = logging.getLogger("agentic_memories.orchestrator")
 
 
 @dataclass(slots=True)
@@ -21,9 +26,80 @@ class IngestionBatch:
     events: List[MessageEvent]
     aggregated: bool
 
-    def to_memory(self) -> Memory:
-        """Convert the batch into a ``Memory`` instance for persistence."""
-
+    def to_memories(self) -> List[Memory]:
+        """Convert the batch into normalized Memory instances using unified ingestion graph."""
+        # Fallback to raw storage if LLM not configured
+        if not is_llm_configured():
+            return [self._to_raw_memory()]
+        
+        # Convert MessageEvent list to Message list for TranscriptRequest
+        history: List[Message] = []
+        for event in self.events:
+            # Convert MessageRole enum to string, filter out TOOL role (not supported by Message schema)
+            role_str = event.role.value
+            if role_str == "tool":
+                # Skip tool messages or convert to assistant - tool role not in Message schema
+                role_str = "assistant"
+            
+            # Only include supported roles
+            if role_str in ("user", "assistant", "system"):
+                history.append(Message(role=role_str, content=event.content))
+        
+        if not history:
+            # No valid messages to process
+            return []
+        
+        # Build metadata preserving orchestrator context
+        metadata = {
+            "conversation_id": self.conversation_id,
+            "message_ids": [event.message_id for event in self.events if event.message_id],
+            "message_roles": [event.role.value for event in self.events],
+            "batch_size": len(self.events),
+            "source": "orchestrator",
+        }
+        if self.aggregated:
+            metadata["aggregation"] = "batched_transcript"
+        
+        # Create TranscriptRequest
+        request = TranscriptRequest(
+            user_id=self.user_id,
+            history=history,
+            metadata=metadata,
+        )
+        
+        # Run unified ingestion graph
+        try:
+            from src.services.unified_ingestion_graph import run_unified_ingestion
+            
+            final_state = run_unified_ingestion(request)
+            memories = final_state.get("memories", [])
+            
+            # Enrich memories with orchestrator metadata
+            for memory in memories:
+                if memory.metadata:
+                    memory.metadata.update({
+                        "conversation_id": self.conversation_id,
+                        "orchestrator_batch": True,
+                    })
+                else:
+                    memory.metadata = {
+                        "conversation_id": self.conversation_id,
+                        "orchestrator_batch": True,
+                    }
+            
+            return memories
+        except Exception as e:
+            # Log error and fallback to raw storage
+            logger.warning(
+                "[orchestrator.ingestion.fallback] conversation=%s error=%s falling back to raw",
+                self.conversation_id,
+                e,
+                exc_info=True,
+            )
+            return [self._to_raw_memory()]
+    
+    def _to_raw_memory(self) -> Memory:
+        """Fallback: Convert the batch into a raw Memory instance (legacy behavior)."""
         transcript_lines = [
             f"{event.role.value}: {event.content}" for event in self.events
         ]
@@ -34,6 +110,7 @@ class IngestionBatch:
             "message_ids": [event.message_id for event in self.events if event.message_id],
             "message_roles": [event.role.value for event in self.events],
             "batch_size": len(self.events),
+            "source": "orchestrator_raw",
         }
         if self.aggregated:
             metadata["aggregation"] = "batched_transcript"
