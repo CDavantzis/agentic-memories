@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import time
 import json
+import uuid
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 
@@ -407,8 +408,13 @@ def node_build_memories(state: IngestionState) -> IngestionState:
 
 		_merge_request_metadata(metadata, request)
 
+		# Generate memory ID upfront so it's available for profile extraction
+		# This ensures profile_sources.source_memory_id is properly populated
+		memory_id = f"mem_{uuid.uuid4().hex[:12]}"
+
 		embedding = generate_embedding(content)
 		memory = Memory(
+			id=memory_id,
 			user_id=state["user_id"],
 			content=content,
 			layer=layer,
