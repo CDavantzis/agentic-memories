@@ -131,9 +131,9 @@ This document provides the complete epic and story breakdown for Agentic Memorie
 
 ## Epic Structure Summary
 
-**2 MVP Epics (API-First)** covering 9 stories, delivering immediate value through backend APIs:
+**2 MVP Epics (API-First)** covering 7 stories, delivering immediate value through backend APIs:
 
-1. **Profile Foundation** - Database schema, extraction pipeline, CRUD APIs (8 stories)
+1. **Profile Foundation** - Database schema, extraction pipeline, CRUD APIs (6 stories, Stories 1.3 & 1.4 deferred)
 2. **Companion Integration** - Profile-aware conversations via API (1 story)
 
 **Post-MVP Epics (Deferred):**
@@ -156,9 +156,10 @@ This document provides the complete epic and story breakdown for Agentic Memorie
 **MVP Epics (API-First):**
 
 **Epic 1 - Profile Foundation**
-- Covers: FR1-FR24, FR82-FR86 (all profile capabilities)
-- 8 stories: Database, extraction, confidence, aggregation, APIs, caching, completeness, audit
-- Deliverable: Complete profile CRUD API system
+- Covers: FR1-FR8, FR13-FR24, FR82-FR86 (FR9-FR12 deferred with Stories 1.3 & 1.4)
+- 6 MVP stories: Database, extraction, CRUD APIs, completeness, import/export, admin analytics
+- Stories 1.3 (confidence aggregation) and 1.4 (proposal/approval) deferred to post-MVP
+- Deliverable: Complete profile CRUD API system with direct-write extraction and LLM confidence
 
 **Epic 2 - Companion Integration**
 - Covers: FR72-FR76 (profile-aware conversations via API)
@@ -191,9 +192,9 @@ This document provides the complete epic and story breakdown for Agentic Memorie
 
 **Dependencies:** None (first epic)
 
-**Estimated Stories:** 8
+**Estimated Stories:** 6 MVP stories (Stories 1.3 and 1.4 deferred to post-MVP)
 
-**FR Coverage:** FR1-FR24, FR82-FR86
+**FR Coverage:** FR1-FR8, FR12-FR24, FR82-FR86 (FR9-FR12 deferred with Stories 1.3 and 1.4)
 
 ---
 
@@ -274,7 +275,20 @@ So that **user profiles can be populated organically from natural conversation f
 
 ---
 
-### Story 1.3: Profile Confidence Scoring Engine
+### ~~Story 1.3: Profile Confidence Scoring Engine~~ [DEFERRED TO POST-MVP]
+
+**Status:** Moved to Future Enhancements (2025-11-16)
+
+**Reason:** With direct-write model, Story 1.2 uses simple replacement strategy (latest/highest confidence wins). Confidence aggregation from multiple extractions adds complexity without clear MVP value. Trust LLM extraction confidence scores. Profile_sources table maintains audit trail for future analysis if needed.
+
+**See:** `docs/sprint-artifacts/scope-change-2025-11-16.md` for full decision record.
+
+---
+
+### ~~Original Story 1.3 Specification (Deferred)~~
+
+<details>
+<summary>Click to expand original story details</summary>
 
 As a **backend developer**,
 I want **an automated confidence scoring system that updates profile field confidence based on supporting evidence**,
@@ -313,9 +327,24 @@ So that **profile reliability improves as more conversational evidence accumulat
   - Daily batch job for all pending candidates
 - Store calculation breakdown in JSONB for transparency
 
+</details>
+
 ---
 
-### Story 1.4: Profile Update Proposal & Approval API
+### ~~Story 1.4: Profile Update Proposal & Approval API~~ [DEFERRED TO POST-MVP]
+
+**Status:** Moved to Future Enhancements (2025-11-16)
+
+**Reason:** Story 1.2 implementation uses direct-write approach. Profile extractions write directly to `profile_fields` table with confidence tracking. Manual correction available via Story 1.5 CRUD APIs. This story requires additional infrastructure (proposals table, candidates table) not in current schema.
+
+**See:** `docs/sprint-artifacts/scope-change-2025-11-16.md` for full decision record.
+
+---
+
+### ~~Original Story 1.4 Specification (Deferred)~~
+
+<details>
+<summary>Click to expand original story details</summary>
 
 As a **backend developer**,
 I want **API endpoints for proposing profile updates and handling user approval/rejection**,
@@ -352,6 +381,8 @@ So that **users maintain control over what gets added to their deterministic pro
 - Consider rate limiting (max 1 proposal per conversation to avoid overwhelming users)
 - Return proposals sorted by confidence score (highest first)
 - No authentication enforcement for MVP
+
+</details>
 
 ---
 

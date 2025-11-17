@@ -212,7 +212,15 @@ class ProfileStorageService:
                 logger.info("[profile.get] user_id=%s not_found", user_id)
                 return None
 
-            completeness_pct, total_fields, populated_fields, last_updated, created_at = profile_row
+            # Handle both tuple and dict-like cursor results
+            if isinstance(profile_row, dict):
+                completeness_pct = profile_row['completeness_pct']
+                total_fields = profile_row['total_fields']
+                populated_fields = profile_row['populated_fields']
+                last_updated = profile_row['last_updated']
+                created_at = profile_row['created_at']
+            else:
+                completeness_pct, total_fields, populated_fields, last_updated, created_at = profile_row
 
             # Get all profile fields
             cursor.execute("""
@@ -234,24 +242,45 @@ class ProfileStorageService:
             }
 
             for row in fields_rows:
-                category, field_name, field_value, value_type, field_last_updated = row
+                # Handle both tuple and dict-like cursor results
+                if isinstance(row, dict):
+                    category = row['category']
+                    field_name = row['field_name']
+                    field_value = row['field_value']
+                    value_type = row['value_type']
+                    field_last_updated = row['last_updated']
+                else:
+                    category, field_name, field_value, value_type, field_last_updated = row
 
                 # Deserialize value based on type
                 parsed_value = self._deserialize_field_value(field_value, value_type)
 
+                # Handle both datetime objects and string timestamps
+                if field_last_updated:
+                    if hasattr(field_last_updated, 'isoformat'):
+                        last_updated_str = field_last_updated.isoformat()
+                    else:
+                        last_updated_str = str(field_last_updated)
+                else:
+                    last_updated_str = None
+
                 profile_data[category][field_name] = {
                     "value": parsed_value,
-                    "last_updated": field_last_updated.isoformat() if field_last_updated else None
+                    "last_updated": last_updated_str
                 }
 
             # Build final profile object
+            # Handle both datetime objects and string timestamps for metadata
+            last_updated_str = last_updated.isoformat() if hasattr(last_updated, 'isoformat') else str(last_updated) if last_updated else None
+            created_at_str = created_at.isoformat() if hasattr(created_at, 'isoformat') else str(created_at) if created_at else None
+
             profile = {
                 "user_id": user_id,
                 "completeness_pct": float(completeness_pct),
                 "total_fields": total_fields,
                 "populated_fields": populated_fields,
-                "last_updated": last_updated.isoformat() if last_updated else None,
-                "created_at": created_at.isoformat() if created_at else None,
+                "last_updated": last_updated_str,
+                "created_at": created_at_str,
                 "profile": profile_data
             }
 
