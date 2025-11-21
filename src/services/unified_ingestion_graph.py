@@ -133,7 +133,8 @@ def node_worthiness(state: IngestionState) -> IngestionState:
 	history = state.get("history", [])
 	# Convert Message objects to dicts for JSON serialization
 	history_dicts = [{"role": m.role, "content": m.content} if hasattr(m, 'role') else m for m in history]
-	payload = {"history": history_dicts[-6:]}  # Last 6 messages
+	# Process ALL messages to capture initial profile information
+	payload = {"history": history_dicts}
 	
 	resp = _call_llm_json(WORTHINESS_PROMPT, payload)
 	worthy = bool(resp and resp.get("worthy", False))
@@ -167,10 +168,11 @@ def node_extract(state: IngestionState) -> IngestionState:
 	# Convert Message objects to dicts for JSON serialization
 	history = state["history"]
 	history_dicts = [{"role": m.role, "content": m.content} if hasattr(m, 'role') else m for m in history]
-	
+
 	# Create enhanced payload with existing memory context
+	# Process ALL messages to capture initial profile information
 	payload = {
-		"history": history_dicts[-6:],
+		"history": history_dicts,
 		"existing_memories_context": existing_context
 	}
 	
