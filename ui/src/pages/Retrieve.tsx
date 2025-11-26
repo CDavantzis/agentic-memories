@@ -19,7 +19,7 @@ export function Retrieve() {
   const [query, setQuery] = useState('')
   const [layer, setLayer] = useState('')
   const [type, setType] = useState('')
-  const [limit, setLimit] = useState(10)
+  const [limit, setLimit] = useState(100)
   const [offset, setOffset] = useState(0)
 
   useEffect(() => { setUserId(getPersistedUserId()) }, [])

@@ -652,7 +652,7 @@ def retrieve(
         layer: Optional[str] = Query(default=None),
         type: Optional[str] = Query(default=None),
         persona: Optional[str] = Query(default=None),
-        limit: int = Query(default=10, ge=1, le=200),
+        limit: int = Query(default=50, ge=1, le=1000),
         offset: int = Query(default=0, ge=0),
 ) -> RetrieveResponse:
         from src.services.tracing import start_trace
