@@ -75,7 +75,7 @@ Extract memories from conversation history as JSON array. Each memory must be:
   
   "portfolio": {
     "ticker": "AAPL",                               // Stock symbol
-    "intent": "buy" | "sell" | "hold" | "watch",
+    "intent": "hold" | "wants-to-buy" | "wants-to-sell" | "watch",
     "quantity": 100,
     "price": 175.50
   },
@@ -158,6 +158,19 @@ When you detect introductions or self-descriptions with name, age, occupation, l
 ### Finance/Stocks (HIGH PRIORITY)
 When you detect: tickers (AAPL, TSLA), buy/sell, portfolio, shares, price targets
 → Always extract + include `portfolio` object + tags: `["finance", "stocks", "ticker:SYMBOL"]`
+
+**CRITICAL - Intent Classification:**
+The `intent` field distinguishes OWNERSHIP from DESIRE. Use these values precisely:
+
+| Intent Value | When to Use | Examples |
+|--------------|-------------|----------|
+| `hold` | User OWNS/HAS the asset (completed purchase or stated ownership) | "I bought 100 AAPL", "I own MSFT", "I have 50 shares of GOOGL", "My TSLA position" |
+| `wants-to-buy` | User WANTS/PLANS to acquire (future intent, NOT owned yet) | "I want to buy AAPL", "Planning to buy NVDA", "Thinking of getting TSLA", "I'd like to purchase" |
+| `wants-to-sell` | User WANTS/PLANS to dispose (intending to sell) | "I want to sell my META", "Planning to exit AMZN", "Thinking of selling" |
+| `watch` | User is MONITORING only (no ownership, no immediate intent) | "Watching INTC", "Keeping an eye on AMD", "Tracking NVDA price" |
+
+**Key distinction:** "I bought X" → `hold` (completed action = ownership), "I want to buy X" → `wants-to-buy` (future desire ≠ ownership)
+
 Performance & cause:
 - If performance is stated (e.g., "portfolio is down 15% this quarter") extract as a semantic fact with tags `["portfolio", "performance"]`.
 - If a reason/cause is stated (e.g., "mostly due to tech stocks") extract an additional memory for the attribution with tags `["portfolio", "analysis"]`.
