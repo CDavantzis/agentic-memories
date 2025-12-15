@@ -1,0 +1,215 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>2</storyId>
+    <title>Portfolio POST Endpoint (Add Holding)</title>
+    <status>drafted</status>
+    <generatedAt>2025-12-14</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/3-2-portfolio-post-endpoint.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>chatbot (Annie)</asA>
+    <iWant>to add a new stock holding for a user via API</iWant>
+    <soThat>I can record purchases the user tells me about directly</soThat>
+    <tasks>
+      <task id="1" ac="1,5">Create Pydantic request model (AddHoldingRequest)</task>
+      <task id="2" ac="2">Implement ticker normalization (uppercase)</task>
+      <task id="3" ac="3">Implement intent validation</task>
+      <task id="4" ac="1,4">Implement POST endpoint with UPSERT behavior</task>
+      <task id="5" ac="1">Create response model with created flag</task>
+      <task id="6" ac="1,2,3,4,5">Write unit tests for all acceptance criteria</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1" title="POST endpoint creates new holding">
+      POST /v1/portfolio/holding creates new holding in portfolio_holdings table. Returns created holding with 201 status.
+    </criterion>
+    <criterion id="AC2" title="Ticker normalization">
+      Lowercase ticker (aapl) normalized to uppercase (AAPL). Stored in uppercase in database.
+    </criterion>
+    <criterion id="AC3" title="Intent validation">
+      Invalid intent returns 400 Bad Request. Error lists valid intents: hold, wants-to-buy, wants-to-sell, watch.
+    </criterion>
+    <criterion id="AC4" title="UPSERT behavior">
+      Existing holding for user_id + ticker + intent is updated (not duplicated). Returns 200 status for update.
+    </criterion>
+    <criterion id="AC5" title="Request validation">
+      Missing required fields (user_id, ticker) returns 422 Unprocessable Entity.
+    </criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/epic-portfolio-crud-api.md</path>
+        <title>Epic 3: Portfolio Direct CRUD API</title>
+        <section>Story 3.2, FR-PC2</section>
+        <snippet>POST /v1/portfolio/holding creates/updates holding. Normalizes ticker to uppercase. Validates intent. UPSERT on user_id + ticker.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/3-1-portfolio-get-endpoint.md</path>
+        <title>Story 3.1 Dev Agent Record</title>
+        <section>Completion Notes, Debug Log</section>
+        <snippet>DB columns: first_acquired, last_updated. Use get_timescale_conn()/release_timescale_conn(). Handle dict/tuple cursor. FastAPI returns 422 for missing params.</snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <file>
+        <path>src/routers/portfolio.py</path>
+        <kind>router</kind>
+        <symbol>router, HoldingResponse</symbol>
+        <lines>1-119</lines>
+        <reason>Add POST endpoint to existing router. Reuse HoldingResponse model for response.</reason>
+      </file>
+      <file>
+        <path>src/services/portfolio_service.py</path>
+        <kind>service</kind>
+        <symbol>normalize_ticker, validate_enum, VALID_INTENTS</symbol>
+        <lines>30-70</lines>
+        <reason>Use existing validation helpers: normalize_ticker() for uppercase, VALID_INTENTS set, validate_enum() function.</reason>
+      </file>
+      <file>
+        <path>src/dependencies/timescale.py</path>
+        <kind>dependency</kind>
+        <symbol>get_timescale_conn, release_timescale_conn</symbol>
+        <reason>Database connection pattern for PostgreSQL queries</reason>
+      </file>
+      <file>
+        <path>tests/unit/test_portfolio_api.py</path>
+        <kind>test</kind>
+        <symbol>_MockCursor, _MockConnection</symbol>
+        <lines>1-244</lines>
+        <reason>Add POST tests to existing test file. Reuse mock patterns.</reason>
+      </file>
+    </code>
+
+    <dependencies>
+      <python>
+        <package name="fastapi" version="0.111.0" />
+        <package name="pydantic" version="2.8.2" />
+        <package name="psycopg" version="latest" />
+      </python>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint source="epic-portfolio-crud-api.md">Unique constraint: (user_id, UPPER(ticker), intent)</constraint>
+    <constraint source="epic-portfolio-crud-api.md">Valid intents: hold, wants-to-buy, wants-to-sell, watch</constraint>
+    <constraint source="portfolio_service.py">Ticker pattern: ^[A-Z0-9\.]{1,10}$</constraint>
+    <constraint source="story-3.1-learnings">DB columns: first_acquired, last_updated (not created_at/updated_at)</constraint>
+    <constraint source="story-3.1-learnings">FastAPI returns 422 for validation errors, not 400</constraint>
+    <constraint source="story-3.1-learnings">Handle dict/tuple cursor results (psycopg3 compatibility)</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>POST /v1/portfolio/holding</name>
+      <kind>REST endpoint</kind>
+      <signature>POST /v1/portfolio/holding (body: AddHoldingRequest)</signature>
+      <path>src/routers/portfolio.py (NEW)</path>
+    </interface>
+    <interface>
+      <name>normalize_ticker</name>
+      <kind>function</kind>
+      <signature>normalize_ticker(ticker: Optional[str]) -> Optional[str]</signature>
+      <path>src/services/portfolio_service.py:42-56</path>
+    </interface>
+    <interface>
+      <name>validate_enum</name>
+      <kind>function</kind>
+      <signature>validate_enum(value: Optional[str], valid_values: Set[str], field_name: str) -> Optional[str]</signature>
+      <path>src/services/portfolio_service.py:59-70</path>
+    </interface>
+    <interface>
+      <name>VALID_INTENTS</name>
+      <kind>constant</kind>
+      <signature>VALID_INTENTS: Set[str] = {'hold', 'wants-to-buy', 'wants-to-sell', 'watch'}</signature>
+      <path>src/services/portfolio_service.py:30</path>
+    </interface>
+  </interfaces>
+
+  <database>
+    <table name="portfolio_holdings">
+      <schema>
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL,
+        ticker VARCHAR(20),
+        asset_name VARCHAR(255),
+        shares NUMERIC(18, 8),
+        avg_price NUMERIC(18, 8),
+        intent VARCHAR(20) CHECK (intent IN ('hold', 'wants-to-buy', 'wants-to-sell', 'watch')),
+        source_memory_id UUID,
+        first_acquired TIMESTAMPTZ DEFAULT NOW(),
+        last_updated TIMESTAMPTZ DEFAULT NOW(),
+        CONSTRAINT uq_user_ticker_intent UNIQUE (user_id, UPPER(ticker), intent)
+      </schema>
+      <query name="upsert_holding">
+        INSERT INTO portfolio_holdings (user_id, ticker, asset_name, shares, avg_price, intent, first_acquired, last_updated)
+        VALUES (%s, %s, %s, %s, %s, %s, NOW(), NOW())
+        ON CONFLICT (user_id, UPPER(ticker), intent)
+        DO UPDATE SET
+            asset_name = COALESCE(EXCLUDED.asset_name, portfolio_holdings.asset_name),
+            shares = COALESCE(EXCLUDED.shares, portfolio_holdings.shares),
+            avg_price = COALESCE(EXCLUDED.avg_price, portfolio_holdings.avg_price),
+            last_updated = NOW()
+        RETURNING id, ticker, asset_name, shares, avg_price, intent, first_acquired, last_updated,
+                  (xmax = 0) AS inserted;
+      </query>
+    </table>
+  </database>
+
+  <tests>
+    <standards>
+      pytest framework with fixtures in tests/conftest.py. Unit tests in tests/unit/. Mock external dependencies (PostgreSQL) for unit tests. Use TestClient from FastAPI for endpoint tests.
+    </standards>
+    <locations>
+      <location>tests/unit/test_portfolio_api.py (extend existing)</location>
+    </locations>
+    <ideas>
+      <idea ac="1">Test POST creates new holding with valid data, returns 201</idea>
+      <idea ac="2">Test ticker normalization: lowercase "aapl" becomes "AAPL"</idea>
+      <idea ac="3">Test invalid intent returns 400 with list of valid intents</idea>
+      <idea ac="4">Test UPSERT: second POST with same user+ticker+intent updates existing, returns 200</idea>
+      <idea ac="5">Test missing user_id returns 422</idea>
+      <idea ac="5">Test missing ticker returns 422</idea>
+      <idea ac="1">Test optional fields (asset_name, shares, avg_price) can be null</idea>
+      <idea ac="2">Test invalid ticker format returns 400</idea>
+    </ideas>
+  </tests>
+
+  <implementation-guide>
+    <step n="1" title="Create AddHoldingRequest model">
+      Add to src/routers/portfolio.py:
+      ```python
+      class AddHoldingRequest(BaseModel):
+          user_id: str
+          ticker: str
+          asset_name: Optional[str] = None
+          shares: Optional[float] = None
+          avg_price: Optional[float] = None
+          intent: str = "hold"
+      ```
+    </step>
+    <step n="2" title="Import validation helpers">
+      Add import at top of portfolio.py:
+      ```python
+      from src.services.portfolio_service import normalize_ticker, VALID_INTENTS
+      ```
+    </step>
+    <step n="3" title="Implement POST endpoint">
+      Add POST endpoint after GET endpoint:
+      - Normalize ticker using normalize_ticker()
+      - Validate intent against VALID_INTENTS
+      - Execute UPSERT query with ON CONFLICT
+      - Check "inserted" flag from RETURNING to determine 201 vs 200
+      - Return holding with appropriate status code
+    </step>
+    <step n="4" title="Add unit tests">
+      Extend tests/unit/test_portfolio_api.py with tests for all ACs
+    </step>
+  </implementation-guide>
+</story-context>
