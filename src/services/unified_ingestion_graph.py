@@ -948,7 +948,7 @@ def build_unified_ingestion_graph() -> StateGraph:
 	graph.add_node("store_episodic", node_store_episodic)
 	graph.add_node("store_emotional", node_store_emotional)
 	graph.add_node("store_procedural", node_store_procedural)
-	graph.add_node("store_portfolio", node_store_portfolio)
+	# graph.add_node("store_portfolio", node_store_portfolio)
 	
 	# Summary and finalization nodes
 	graph.add_node("summarize", node_summarize_storage)
@@ -981,10 +981,10 @@ def build_unified_ingestion_graph() -> StateGraph:
 	graph.add_edge("store_chromadb", "store_episodic")
 	graph.add_edge("store_episodic", "store_emotional")
 	graph.add_edge("store_emotional", "store_procedural")
-	graph.add_edge("store_procedural", "store_portfolio")
-	
+	# graph.add_edge("store_procedural", "store_portfolio")
+	graph.add_edge("store_procedural", "summarize")
 	# Summarize storage results before finalize
-	graph.add_edge("store_portfolio", "summarize")
+	# graph.add_edge("store_portfolio", "summarize")
 	graph.add_edge("summarize", "finalize")
 	
 	# End nodes
