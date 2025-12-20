@@ -175,15 +175,16 @@ def build_compaction_graph() -> StateGraph:
 		cands = _fetch_user_memories(user_id, limit=limit)
 		state["candidates"] = cands
 		
-		# Safety check: if no candidates, skip re-extraction
+		# Safety check: if no candidates, force skip re-extraction
+		# Otherwise, respect the caller's skip_reextract flag
 		if not cands:
 			logger.info("[graph.load.empty] user_id=%s no_candidates_found", user_id)
 			state["skip_reextract"] = True
-		else:
-			state["skip_reextract"] = False
+		# Note: We no longer override skip_reextract=True when candidates exist
+		# The caller's intent is respected (default: skip_reextract=True)
 		
 		latency_ms = int((_time.perf_counter() - _t) * 1000)
-		logger.info("[graph.load] user_id=%s loaded=%s latency_ms=%s", user_id, len(cands), latency_ms)
+		logger.info("[graph.load] user_id=%s loaded=%s skip_reextract=%s latency_ms=%s", user_id, len(cands), state.get("skip_reextract"), latency_ms)
 		
 		end_span(output={
 			"loaded_count": len(cands),
@@ -205,9 +206,9 @@ def build_compaction_graph() -> StateGraph:
 		
 		_t = _time.perf_counter()
 		
-		# Skip if no candidates were loaded
+		# Skip if flag is set (user requested skip or no candidates were loaded)
 		if state.get("skip_reextract", False):
-			logger.info("[graph.reextract.skip] user_id=%s no_candidates", user_id)
+			logger.info("[graph.reextract.skip] user_id=%s reason=skip_reextract_flag", user_id)
 			state["reextract"] = {"new_memories": [], "delete_ids": []}
 			end_span(output={"skipped": True})
 			return state
