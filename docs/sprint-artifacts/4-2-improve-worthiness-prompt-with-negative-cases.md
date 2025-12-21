@@ -1,6 +1,6 @@
 # Story 4.2: Improve Worthiness Prompt with Negative Cases
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -163,7 +163,7 @@ Ensure alignment in terminology and examples.
 
 ### Context Reference
 
-<!-- Path(s) to story context XML will be added here by context workflow -->
+- [Story Context XML](./4-2-improve-worthiness-prompt-with-negative-cases.context.xml)
 
 ### Agent Model Used
 
@@ -180,3 +180,22 @@ Claude Opus 4.5
 | Date | Author | Change |
 |------|--------|--------|
 | 2025-12-20 | BMad Master | Story drafted from Epic 4 requirements |
+| 2025-12-20 | Dev Agent | Implementation complete - WORTHINESS_PROMPT updated |
+| 2025-12-21 | Dev Agent | All tests passed - Story marked DONE |
+
+## Completion Notes
+
+### Test Results (2025-12-21)
+
+**Negative Cases (All Passed - 0 memories extracted):**
+- TC1: "I want to make money investing" → ✅ Rejected (truism)
+- TC2: "I have a portfolio" → ✅ Rejected (generic statement)
+- TC3: "Tell me about the stock market" → ✅ Rejected (meta-chatter)
+
+**Positive Cases (All Passed - memories extracted):**
+- TC4: "I prefer value investing because lower risk" → ✅ 2 memories
+- TC5: "I am John, 35-year-old engineer in NYC" → ✅ 4 memories (profile)
+- TC6: "Bullish on AAPL due to services growth" → ✅ 2 memories (finance+insight)
+
+### Files Modified
+- `src/services/prompts.py` - Added NOT Worthy section and Ask Yourself framework to WORTHINESS_PROMPT (lines 24-39)

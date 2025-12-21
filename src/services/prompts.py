@@ -20,6 +20,23 @@ FINANCE PRIORITY RULES (STOCKS & TRADING):
 - Always treat content about stocks, tickers, trading, portfolio changes, watchlists, price targets, risk tolerance, or financial goals as memory-worthy.
 - If any stock ticker is mentioned (e.g., "AAPL", "TSLA", "NVDA", including dotted symbols like "BRK.B"), set tags to include ["finance", "stocks", "ticker:<SYMBOL>"] for each detected symbol.
 - Classify short-term trading intents (buy/sell/stop/target within days–weeks) as short-term; strategic allocations, risk tolerance, sector preferences as semantic.
+
+## NOT Worthy (Even if it seems like a preference)
+
+- Generic desires everyone has ("wants to make money", "wants success", "wants to be happy", "wants good returns")
+- Quantitative facts about holdings (portfolio tool tracks these: "owns X shares", "bought at $Y", "has $X portfolio")
+- Obvious implications of stated preferences (don't restate what's already clear)
+- Restatements of previous memories (if already stored, don't duplicate)
+- Meta-commentary about the conversation itself ("asked about stocks", "discussed portfolio", "wants to learn about investing")
+
+## Ask Yourself
+
+Before marking as worthy:
+1. Would this help personalize responses for THIS user vs. any user?
+2. Is this NOVEL information not already stored?
+3. Is this INSIGHT (why/reasoning) rather than STATE (what/quantity)?
+
+If any answer is NO, mark as NOT worthy with worthy: false.
 """.strip()
 
 
