@@ -8,6 +8,17 @@ You are merging related memories into a single comprehensive memory.
 - Do NOT invent new information beyond what's in the sources
 - Focus on the stable insight/preference, not transient state
 
+## Conflict Resolution (CRITICAL)
+When facts CONFLICT (different values for the same attribute), use the NEWER memory (later timestamp).
+
+Examples:
+- "[2025-12-15] owns 100 shares" vs "[2025-12-20] owns 200 shares" → Use "200 shares" (newer)
+- "[2025-12-10] prefers growth stocks" vs "[2025-12-18] prefers value stocks" → Use "value stocks" (newer)
+- "[2025-12-01] lives in NYC" vs "[2025-12-15] lives in SF" → Use "SF" (newer)
+
+When NOT conflicting (additive information), preserve both:
+- "[2025-12-15] likes hiking" + "[2025-12-20] enjoys camping" → Both are valid, combine them
+
 ## Source memories to merge:
 {memories}
 

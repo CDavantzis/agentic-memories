@@ -126,11 +126,32 @@ def _consolidate_cluster(user_id: str, cluster: List[Dict[str, Any]]) -> Dict[st
 		Dict with 'memory' (Memory object) and 'source_ids' (list of source IDs)
 	"""
 	from src.services.extract_utils import _call_llm_json
+	from datetime import datetime
 
-	# Format memories for prompt
+	# Format memories for prompt with timestamps for conflict resolution
+	# Sort by timestamp (oldest first) so LLM sees chronological order
+	def get_timestamp(mem: Dict[str, Any]) -> str:
+		meta = mem.get("metadata", {})
+		# Try created_at first, fall back to updated_at
+		ts = meta.get("created_at") or meta.get("updated_at") or ""
+		if ts:
+			# Format as date string if it's a valid timestamp
+			try:
+				if isinstance(ts, (int, float)):
+					return datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+				elif isinstance(ts, str):
+					# Already a string, extract date portion
+					return ts[:10] if len(ts) >= 10 else ts
+			except:
+				pass
+		return "unknown"
+
+	# Sort cluster by timestamp (oldest first)
+	sorted_cluster = sorted(cluster, key=lambda m: get_timestamp(m))
+
 	memories_text = "\n".join([
-		f"- {mem.get('content', '')}"
-		for mem in cluster
+		f"- [{get_timestamp(mem)}] {mem.get('content', '')}"
+		for mem in sorted_cluster
 	])
 
 	system_prompt = CONSOLIDATION_PROMPT.format(memories=memories_text)
