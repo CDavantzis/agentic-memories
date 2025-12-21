@@ -149,7 +149,7 @@ class HybridRetrievalService:
                 collection = self.chroma_client.get_collection(collection_name)
                 search_results = collection.query(
                     query_embeddings=query_embeddings,
-                    n_results=20,
+                    n_results=query.limit,
                     where={"user_id": query.user_id}
                 )
                 if search_results and search_results.get('ids') and search_results['ids'][0]:
