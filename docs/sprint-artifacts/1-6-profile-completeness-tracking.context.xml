@@ -1,0 +1,198 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>1</epicId>
+    <storyId>6</storyId>
+    <title>Profile Completeness Tracking</title>
+    <status>drafted</status>
+    <generatedAt>2025-12-14</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/1-6-profile-completeness-tracking.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>system</asA>
+    <iWant>automatic tracking of profile completeness across all categories</iWant>
+    <soThat>the system knows which profile gaps to prioritize for filling and can provide completeness metrics to users/companions</soThat>
+    <tasks>
+      <task id="1" ac="1">Define expected fields per category (25 total: 5 categories × 5 fields)</task>
+      <task id="2" ac="1,2">Enhance completeness calculation logic with per-category breakdown</task>
+      <task id="3" ac="3">Implement high-value gap identification with priority ordering</task>
+      <task id="4" ac="4">Add Redis caching for completeness data (TTL: 3600s)</task>
+      <task id="5" ac="5">Enhance GET /v1/profile/completeness endpoint with details parameter</task>
+      <task id="6" ac="1">Trigger completeness recalculation on profile changes</task>
+      <task id="7" ac="1-5">Write unit tests for completeness service</task>
+      <task id="8" ac="1-5">Write integration tests for enhanced endpoint</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1" title="Completeness recalculation on profile changes">
+      Recalculate completeness_score for each category when profile data changes. Categories: basics(5), preferences(5), goals(5), interests(5), background(5). Total: 25 fields.
+    </criterion>
+    <criterion id="AC2" title="Overall completeness calculation">
+      overall_completeness = (total_populated / 25) * 100. Store in user_profiles.completeness_pct. Update populated_fields and total_fields atomically.
+    </criterion>
+    <criterion id="AC3" title="High-value gap identification">
+      Prioritize gaps: basics fields (highest) > zero-confidence fields > goal-relevant fields. Return ordered list.
+    </criterion>
+    <criterion id="AC4" title="Redis caching for gap prioritization">
+      Cache key: profile_completeness:{user_id}. TTL: 3600 seconds. Invalidate on profile changes.
+    </criterion>
+    <criterion id="AC5" title="GET /v1/profile/completeness enhancement">
+      Add details=true parameter. Return per-category breakdown with missing fields and high_value_gaps list. details=false returns existing simple response.
+    </criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>AD-007 Profile Caching, AD-011 Profile Completeness</section>
+        <snippet>Redis caching with 5-minute TTL, namespace bumping pattern. Completeness = (populated_fields / total_fields) × 100, cached in user_profiles.completeness_pct column.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Pattern: Profile Storage Service</section>
+        <snippet>ProfileStorageService handles CRUD with confidence recalculation. _update_completeness calculates based on expected_fields dictionary.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Epic 1 Story 1.6</section>
+        <snippet>Profile Completeness Tracking: Automatic tracking across categories, high-value gap identification, Redis caching.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/1-5-profile-crud-api-endpoints.md</path>
+        <title>Story 1.5 Dev Agent Record</title>
+        <section>Completion Notes</section>
+        <snippet>GET /v1/profile/completeness exists returning overall_pct, populated, total. Cursor dict/tuple handling pattern established.</snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <file>
+        <path>src/services/profile_storage.py</path>
+        <kind>service</kind>
+        <symbol>ProfileStorageService</symbol>
+        <lines>1-326</lines>
+        <reason>Core service to extend with enhanced completeness calculation and gap identification methods</reason>
+      </file>
+      <file>
+        <path>src/services/profile_storage.py</path>
+        <kind>method</kind>
+        <symbol>_update_profile_metadata</symbol>
+        <lines>145-184</lines>
+        <reason>Existing completeness calculation using expected_fields_per_category dict. Currently uses 21 fields - needs update to 25.</reason>
+      </file>
+      <file>
+        <path>src/routers/profile.py</path>
+        <kind>router</kind>
+        <symbol>router</symbol>
+        <lines>1-462</lines>
+        <reason>Profile API router to enhance with details parameter on /completeness endpoint</reason>
+      </file>
+      <file>
+        <path>src/routers/profile.py</path>
+        <kind>endpoint</kind>
+        <symbol>get_profile_completeness</symbol>
+        <lines>92-152</lines>
+        <reason>Existing completeness endpoint to enhance with details=true parameter</reason>
+      </file>
+      <file>
+        <path>src/routers/profile.py</path>
+        <kind>function</kind>
+        <symbol>_update_profile_metadata</symbol>
+        <lines>423-461</lines>
+        <reason>Duplicate completeness logic in router - needs sync with service layer changes</reason>
+      </file>
+      <file>
+        <path>src/dependencies/timescale.py</path>
+        <kind>dependency</kind>
+        <symbol>get_timescale_conn, release_timescale_conn</symbol>
+        <reason>Database connection pattern for PostgreSQL queries</reason>
+      </file>
+      <file>
+        <path>src/dependencies/redis_client.py</path>
+        <kind>dependency</kind>
+        <symbol>get_redis_client</symbol>
+        <reason>Redis client for caching completeness data</reason>
+      </file>
+      <file>
+        <path>tests/unit/test_profile_api.py</path>
+        <kind>test</kind>
+        <symbol>test_profile_api</symbol>
+        <reason>Existing profile API tests - extend with completeness tests</reason>
+      </file>
+    </code>
+
+    <dependencies>
+      <python>
+        <package name="fastapi" version="0.111.0" />
+        <package name="pydantic" version="2.8.2" />
+        <package name="redis" version="5.0.6" />
+        <package name="psycopg" version="latest" />
+        <package name="psycopg-pool" version="3.2.1" />
+        <package name="pytest" version="8.3.2" />
+      </python>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint source="architecture.md">Follow existing service layer pattern in ProfileStorageService</constraint>
+    <constraint source="architecture.md">Use Redis namespace pattern: profile_completeness:{user_id} with 1 hour TTL</constraint>
+    <constraint source="story-1.5">Handle cursor results as both dict and tuple (psycopg3 compatibility)</constraint>
+    <constraint source="story-1.5">FastAPI routing: specific routes before parameterized routes</constraint>
+    <constraint source="architecture.md">Expected fields: 5 per category × 5 categories = 25 total (not 21)</constraint>
+    <constraint source="story-1.5">source_type valid values: explicit, implicit, inferred (NOT manual)</constraint>
+    <constraint source="backward-compat">details=false must return existing simple response for backward compatibility</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>GET /v1/profile/completeness</name>
+      <kind>REST endpoint</kind>
+      <signature>GET /v1/profile/completeness?user_id={user_id}&amp;details={bool}</signature>
+      <path>src/routers/profile.py:92-152</path>
+    </interface>
+    <interface>
+      <name>ProfileStorageService.get_profile_by_user</name>
+      <kind>method</kind>
+      <signature>get_profile_by_user(user_id: str) -> Optional[Dict[str, Any]]</signature>
+      <path>src/services/profile_storage.py:186-308</path>
+    </interface>
+    <interface>
+      <name>ProfileStorageService._update_profile_metadata</name>
+      <kind>method</kind>
+      <signature>_update_profile_metadata(cursor, user_id: str) -> None</signature>
+      <path>src/services/profile_storage.py:145-184</path>
+    </interface>
+    <interface>
+      <name>get_redis_client</name>
+      <kind>function</kind>
+      <signature>get_redis_client() -> Redis</signature>
+      <path>src/dependencies/redis_client.py</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      pytest framework with fixtures in tests/conftest.py. Unit tests in tests/unit/, integration tests in tests/e2e/. Mock external dependencies (Redis, PostgreSQL) for unit tests. Use TestClient from FastAPI for endpoint tests.
+    </standards>
+    <locations>
+      <location>tests/unit/test_profile_api.py</location>
+      <location>tests/unit/test_profile_completeness.py (new)</location>
+      <location>tests/e2e/test_e2e_api.py</location>
+    </locations>
+    <ideas>
+      <idea ac="1">Test completeness calculation with 0, partial, and full fields populated</idea>
+      <idea ac="2">Test per-category breakdown accuracy (5 fields per category)</idea>
+      <idea ac="3">Test gap priority ordering: basics > zero-confidence > goal-relevant</idea>
+      <idea ac="4">Test Redis cache set/get/invalidate operations</idea>
+      <idea ac="5">Test details=true returns extended response with categories and high_value_gaps</idea>
+      <idea ac="5">Test details=false returns simple response (backward compatibility)</idea>
+      <idea ac="1,4">Test cache invalidation on profile field update</idea>
+    </ideas>
+  </tests>
+</story-context>

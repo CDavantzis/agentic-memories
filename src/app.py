@@ -60,12 +60,13 @@ except Exception:
 from datetime import datetime as _dt, timezone as _tz, timedelta as _td
 from src.services.forget import run_compaction_for_user
 from src.services.persona_retrieval import PersonaCoPilot
-from src.routers import profile
+from src.routers import profile, portfolio
 
 app = FastAPI(title="Agentic Memories API", version="0.1.0")
 
 # Include routers
 app.include_router(profile.router)
+app.include_router(portfolio.router)
 # Scheduler: daily midnight UTC compaction trigger (conditional on recent activity)
 _scheduler: Optional[BackgroundScheduler] = None
 
@@ -1325,19 +1326,23 @@ def compact_all_users() -> MaintenanceResponse:
 @app.post("/v1/maintenance/compact")
 def compact_single_user(
     user_id: str = Query(...),
-    skip_reextract: bool = Query(default=True, description="Skip expensive LLM re-extraction (default: true)")
+    skip_reextract: bool = Query(default=True, description="Skip expensive LLM re-extraction (default: true)"),
+    skip_consolidate: bool = Query(default=False, description="Skip memory consolidation into golden records (default: false - consolidation runs)")
 ) -> dict:
     """Run compaction for a single user.
 
-    By default, only runs TTL cleanup and deduplication (fast, cheap).
+    By default, runs TTL cleanup, deduplication, and consolidation.
     Set skip_reextract=false to enable full LLM re-extraction (slow, expensive).
+    Set skip_consolidate=true to disable memory consolidation.
     """
     try:
-        stats = run_compaction_for_user(user_id, skip_reextract=skip_reextract)
-        logger.info("[maint.compaction.done] user_id=%s skip_reextract=%s stats=%s", user_id, skip_reextract, stats)
+        stats = run_compaction_for_user(user_id, skip_reextract=skip_reextract, skip_consolidate=skip_consolidate)
+        logger.info("[maint.compaction.done] user_id=%s skip_reextract=%s skip_consolidate=%s stats=%s",
+                   user_id, skip_reextract, skip_consolidate, stats)
         return {
             "user_id": user_id,
             "skip_reextract": skip_reextract,
+            "skip_consolidate": skip_consolidate,
             "status": "completed",
             "stats": stats
         }
@@ -1346,6 +1351,7 @@ def compact_single_user(
         return {
             "user_id": user_id,
             "skip_reextract": skip_reextract,
+            "skip_consolidate": skip_consolidate,
             "status": "failed",
             "error": str(exc)
         }

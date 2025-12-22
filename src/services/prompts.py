@@ -1,3 +1,38 @@
+CONSOLIDATION_PROMPT = """
+You are merging related memories into a single comprehensive memory.
+
+## Guidelines
+- Preserve ALL key facts from source memories
+- Use "User" format (e.g., "User is a value investor...")
+- Combine related details into coherent statements
+- Do NOT invent new information beyond what's in the sources
+- Focus on the stable insight/preference, not transient state
+
+## Conflict Resolution (CRITICAL)
+When facts CONFLICT (different values for the same attribute), use the NEWER memory (later timestamp).
+
+Examples:
+- "[2025-12-15] owns 100 shares" vs "[2025-12-20] owns 200 shares" → Use "200 shares" (newer)
+- "[2025-12-10] prefers growth stocks" vs "[2025-12-18] prefers value stocks" → Use "value stocks" (newer)
+- "[2025-12-01] lives in NYC" vs "[2025-12-15] lives in SF" → Use "SF" (newer)
+
+When NOT conflicting (additive information), preserve both:
+- "[2025-12-15] likes hiking" + "[2025-12-20] enjoys camping" → Both are valid, combine them
+
+## Source memories to merge:
+{memories}
+
+## Return a single JSON object:
+```json
+{{
+  "content": "User ..."
+}}
+```
+
+Return ONLY the JSON object, no explanation.
+""".strip()
+
+
 WORTHINESS_PROMPT = """
 You extract whether a user's recent message is memory-worthy for personalization.
 Return ONLY valid JSON with this schema:
@@ -20,6 +55,23 @@ FINANCE PRIORITY RULES (STOCKS & TRADING):
 - Always treat content about stocks, tickers, trading, portfolio changes, watchlists, price targets, risk tolerance, or financial goals as memory-worthy.
 - If any stock ticker is mentioned (e.g., "AAPL", "TSLA", "NVDA", including dotted symbols like "BRK.B"), set tags to include ["finance", "stocks", "ticker:<SYMBOL>"] for each detected symbol.
 - Classify short-term trading intents (buy/sell/stop/target within days–weeks) as short-term; strategic allocations, risk tolerance, sector preferences as semantic.
+
+## NOT Worthy (Even if it seems like a preference)
+
+- Generic desires everyone has ("wants to make money", "wants success", "wants to be happy", "wants good returns")
+- Quantitative facts about holdings (portfolio tool tracks these: "owns X shares", "bought at $Y", "has $X portfolio")
+- Obvious implications of stated preferences (don't restate what's already clear)
+- Restatements of previous memories (if already stored, don't duplicate)
+- Meta-commentary about the conversation itself ("asked about stocks", "discussed portfolio", "wants to learn about investing")
+
+## Ask Yourself
+
+Before marking as worthy:
+1. Would this help personalize responses for THIS user vs. any user?
+2. Is this NOVEL information not already stored?
+3. Is this INSIGHT (why/reasoning) rather than STATE (what/quantity)?
+
+If any answer is NO, mark as NOT worthy with worthy: false.
 """.strip()
 
 
@@ -74,10 +126,9 @@ Extract memories from conversation history as JSON array. Each memory must be:
   },
   
   "portfolio": {
-    "ticker": "AAPL",                               // Stock symbol
-    "intent": "buy" | "sell" | "hold" | "watch",
-    "quantity": 100,
-    "price": 175.50
+    "ticker": "AAPL",                               // Stock symbol (required)
+    "quantity": 100,                                // Shares owned (optional)
+    "price": 175.50                                 // Price per share (optional)
   },
   
   "learning_journal": {
@@ -110,10 +161,20 @@ Split compound statements:
 "I love sci-fi and run marathons" →
   ["User loves sci-fi books.", "User runs marathons."]
 
-**Rule 3: DEDUPLICATION**
+**Rule 3: DEDUPLICATION (with Entailment Check)**
 Given existing: "User loves science fiction."
 - "I'm a sci-fi fan" → SKIP (duplicate)
 - "I also like fantasy" → EXTRACT (new)
+
+**Entailment Reasoning:**
+Before storing, ask: "Does an existing memory strongly ENTAIL (logically imply) this new one?"
+- Existing: "User is a Buffett-style value investor."
+- New: "User likes Warren Buffett." → SKIP (existing implies this - redundant)
+- New: "User also follows Munger's mental models." → EXTRACT (adds novel info)
+
+Only store if:
+1. No existing memory covers this topic, OR
+2. New memory adds NOVEL information not captured by existing
 
 **Rule 4: LAYER ASSIGNMENT**
 - `short-term`: Time-bound facts ("tomorrow", "next week", "by Friday")
@@ -124,6 +185,108 @@ Given existing: "User loves science fiction."
 - `0.9`: Strong indication ("X is amazing!", "always do Y")
 - `0.7`: Moderate indication ("might try X", "considering Y")
 - `0.5`: Weak indication ("X could be interesting")
+
+## CRITICAL: What NOT to Extract
+
+### Anti-Pattern 1: Truisms & Obvious Statements
+Universal desires that apply to everyone and provide no personalization value.
+
+❌ Examples to AVOID:
+- "User wants to make money" (everyone wants this)
+- "User wants to be successful" (universal desire)
+- "User wants good returns on investments" (obvious for any investor)
+- "User wants to be happy" (universal human desire)
+- "User is interested in the stock market" (too vague if no specific insight)
+
+✅ Correct Alternative:
+- "User prioritizes dividend income over growth" (specific strategy)
+- "User prefers small-cap value stocks" (specific preference)
+- "User focuses on companies with strong moats" (specific investing approach)
+
+### Anti-Pattern 2: State Data (Belongs in Structured Tools)
+Quantitative facts that change frequently and are tracked by the Portfolio tool.
+For pure holdings data, use the `portfolio` object ONLY - do not create memory content.
+
+❌ Examples to AVOID (as memory content):
+- "User owns 100 shares of AAPL" (portfolio tool tracks this)
+- "User's position is worth $15,000" (portfolio tool tracks this)
+- "User bought AAPL at $150" (portfolio tool tracks this)
+- "User has a $50,000 portfolio" (portfolio tool tracks this)
+- "User owns 2810 shares of RKLB" (pure state, no insight)
+
+✅ Correct Alternative:
+- Extract to `portfolio` object: `{"ticker": "AAPL", "quantity": 100, "price": 150}`
+- Only create memory content if there's an INSIGHT explaining WHY:
+  - "User bought AAPL for dividend income" (insight about reasoning)
+  - "User holds RKLB because of belief in Neutron rocket reusability" (insight about thesis)
+
+### Anti-Pattern 3: Semantic Echoes (Already Captured Elsewhere)
+Variations of information already stored in existing memories.
+Before extracting, check if the new statement is ENTAILED by an existing memory.
+
+❌ Examples to AVOID (given existing: "User is a Buffett-style value investor"):
+- "User likes Warren Buffett" (implied by existing)
+- "User admires Buffett" (implied by existing)
+- "User follows Buffett's approach" (duplicate of existing)
+- "User is a value investor" (subset of existing)
+- "User prefers value investing" (redundant with existing)
+
+✅ Correct Alternative:
+- "User also applies Munger's mental models" (NEW information not in existing)
+- "User combines Buffett's approach with momentum indicators" (EXTENDS existing)
+- Skip extraction if new statement is logically entailed by existing memory
+
+### Anti-Pattern 4: Restatements of User Actions (Meta-chatter)
+Commentary about the conversation itself or vague requests without specific preferences.
+
+❌ Examples to AVOID:
+- "User asked about stocks" (meta-commentary about conversation)
+- "User wants to learn about investing" (too vague, no specific goal)
+- "User is having a conversation about finance" (meta-chatter)
+- "User requested information about AAPL" (action, not preference)
+- "User discussed their portfolio" (meta-commentary)
+- "User mentioned their investments" (meta-commentary)
+
+✅ Correct Alternative:
+- Only extract when there's a genuine preference, insight, or specific goal
+- "User is studying for CFA certification" (specific learning goal)
+- "User wants to understand options trading for hedging" (specific intent)
+
+## Classify: State vs. Insight (CRITICAL for Finance)
+
+For every potential memory involving quantitative data, classify before extracting:
+
+**STATE** (quantitative, changes frequently, tracked by tools):
+- Holdings quantities: "User owns X shares of Y"
+- Portfolio values: "User's position is worth $X"
+- Price targets: "User's target for X is $Y"
+- Account balances: "User has $X in savings"
+
+→ Action: Extract to `portfolio` object ONLY. Do NOT create memory content.
+  The Portfolio tool tracks this state data separately.
+
+**INSIGHT** (qualitative, stable, explains reasoning):
+- Investment thesis: "User bought X because of Y"
+- Risk tolerance: "User prefers defensive positions"
+- Strategy: "User follows Buffett's value investing"
+- Market view: "User is bearish on tech due to rate hikes"
+
+→ Action: Extract as memory content with high confidence.
+  Include `portfolio.ticker` for reference if applicable.
+
+**Routing Examples:**
+
+Input: "I bought 100 shares of AAPL at $150"
+→ portfolio: {ticker: "AAPL", quantity: 100, price: 150}
+→ content: (NONE - pure state, no insight)
+
+Input: "I bought AAPL because I love their ecosystem"
+→ portfolio: {ticker: "AAPL"}
+→ content: "User bought AAPL because of love for Apple ecosystem."
+
+Input: "I own 2810 shares of RKLB because I believe in Neutron's reusability"
+→ portfolio: {ticker: "RKLB", quantity: 2810}
+→ content: "User holds RKLB because of belief in Neutron rocket reusability."
 
 ## Domain-Specific Rules
 
@@ -156,8 +319,16 @@ When you detect introductions or self-descriptions with name, age, occupation, l
 - Confidence should be 1.0 for explicit statements
 
 ### Finance/Stocks (HIGH PRIORITY)
-When you detect: tickers (AAPL, TSLA), buy/sell, portfolio, shares, price targets
+When you detect: tickers (AAPL, TSLA), portfolio, shares, price
 → Always extract + include `portfolio` object + tags: `["finance", "stocks", "ticker:SYMBOL"]`
+
+**Portfolio extraction focuses on:**
+- **ticker**: The stock symbol (e.g., "AAPL", "TSLA", "BRK.B")
+- **quantity**: Number of shares owned (if mentioned)
+- **price**: Price per share or average cost (if mentioned)
+
+**Key:** Only extract actual holdings (stocks the user owns). Watchlist items and future purchase intentions are not stored as portfolio holdings.
+
 Performance & cause:
 - If performance is stated (e.g., "portfolio is down 15% this quarter") extract as a semantic fact with tags `["portfolio", "performance"]`.
 - If a reason/cause is stated (e.g., "mostly due to tech stocks") extract an additional memory for the attribution with tags `["portfolio", "analysis"]`.
@@ -250,10 +421,10 @@ User: "Hi! I'm Sarah Chen, a 28-year-old software engineer living in San Francis
 ]
 ```
 
-### Example 1: Multi-faceted Input
+### Example 1: Multi-faceted Input (State + Non-Finance)
 **Input:**
 ```
-User: "I bought 100 shares of AAPL at $150 yesterday. Planning to hold long-term.
+User: "I bought 100 shares of AAPL at $150 yesterday.
        Also, I'm learning Python - been at it for 3 months now!"
 ```
 
@@ -261,17 +432,15 @@ User: "I bought 100 shares of AAPL at $150 yesterday. Planning to hold long-term
 ```json
 [
   {
-    "content": "User bought 100 shares of AAPL at $150.",
+    "content": null,
     "type": "explicit",
     "layer": "semantic",
     "confidence": 1.0,
     "tags": ["finance", "stocks", "ticker:AAPL"],
     "portfolio": {
       "ticker": "AAPL",
-      "intent": "hold",
       "quantity": 100,
-      "price": 150,
-      "time_horizon": "long-term"
+      "price": 150
     }
   },
   {
@@ -287,6 +456,30 @@ User: "I bought 100 shares of AAPL at $150 yesterday. Planning to hold long-term
   }
 ]
 ```
+**Note:** First entry has `content: null` because it's pure STATE data (quantity/price). Portfolio object captures the state. No memory content needed.
+
+### Example 1b: Finance with Insight
+**Input:**
+```
+User: "I bought AAPL because I believe in their services growth story."
+```
+
+**Output:**
+```json
+[
+  {
+    "content": "User bought AAPL because of belief in services growth.",
+    "type": "explicit",
+    "layer": "semantic",
+    "confidence": 1.0,
+    "tags": ["finance", "stocks", "ticker:AAPL", "investment_thesis"],
+    "portfolio": {
+      "ticker": "AAPL"
+    }
+  }
+]
+```
+**Note:** This has INSIGHT (the WHY), so memory content IS created. Portfolio object references the ticker.
 
 ### Example 2: Emotional + Temporal
 **Input:**

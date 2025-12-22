@@ -15,9 +15,208 @@ from src.services.storage import upsert_memories
 from src.models import Memory
 from src.services.extraction import extract_from_transcript
 from src.schemas import TranscriptRequest, Message
+from src.services.prompts import CONSOLIDATION_PROMPT
 
 
 logger = logging.getLogger("agentic_memories.compaction_graph")
+
+
+def _cluster_memories(memories: List[Dict[str, Any]], threshold: float = 0.75) -> List[List[Dict[str, Any]]]:
+	"""Cluster memories by embedding similarity.
+
+	Groups memories with cosine similarity > threshold into clusters.
+	Requires minimum 5 memories to attempt clustering.
+	Returns only clusters with 3-10 memories (skip pairs, prevent over-merging).
+
+	Args:
+		memories: List of memory dicts with 'id', 'content', 'metadata'
+		threshold: Similarity threshold for clustering (default 0.75)
+
+	Returns:
+		List of clusters, where each cluster is a list of memory dicts
+	"""
+	if len(memories) < 5:
+		return []
+
+	# Generate embeddings for all memories
+	embeddings: List[List[float]] = []
+	valid_memories: List[Dict[str, Any]] = []
+
+	for mem in memories:
+		content = mem.get("content", "")
+		if not content:
+			continue
+		try:
+			emb = generate_embedding(content)
+			if emb:
+				embeddings.append(emb)
+				valid_memories.append(mem)
+		except Exception as e:
+			logger.warning("[cluster.embed.error] id=%s error=%s", mem.get("id"), e)
+			continue
+
+	if len(valid_memories) < 3:
+		return []
+
+	# Compute similarity matrix and cluster using greedy approach
+	n = len(valid_memories)
+	used = set()
+	clusters: List[List[Dict[str, Any]]] = []
+
+	for i in range(n):
+		if i in used:
+			continue
+
+		cluster = [valid_memories[i]]
+		used.add(i)
+
+		for j in range(i + 1, n):
+			if j in used:
+				continue
+
+			# Compute cosine similarity
+			a, b = embeddings[i], embeddings[j]
+			if len(a) != len(b):
+				continue
+
+			dot = sum(x * y for x, y in zip(a, b))
+			na = sum(x * x for x in a) ** 0.5
+			nb = sum(y * y for y in b) ** 0.5
+
+			if na <= 0 or nb <= 0:
+				continue
+
+			cos_sim = dot / (na * nb)
+
+			if cos_sim >= threshold:
+				# Check similarity with ALL cluster members (complete linkage)
+				is_similar_to_all = True
+				for k_idx, k_mem in enumerate(cluster):
+					if k_idx == 0:
+						continue  # Already checked with i
+					k_orig_idx = valid_memories.index(k_mem)
+					k_emb = embeddings[k_orig_idx]
+					dot_k = sum(x * y for x, y in zip(k_emb, b))
+					na_k = sum(x * x for x in k_emb) ** 0.5
+					cos_k = dot_k / (na_k * nb) if na_k > 0 else 0
+					if cos_k < threshold:
+						is_similar_to_all = False
+						break
+
+				if is_similar_to_all and len(cluster) < 10:  # Max cluster size
+					cluster.append(valid_memories[j])
+					used.add(j)
+
+		# Only keep clusters with 3-10 memories
+		if 3 <= len(cluster) <= 10:
+			clusters.append(cluster)
+
+	logger.info("[cluster] found=%s clusters from %s memories", len(clusters), n)
+	return clusters
+
+
+def _consolidate_cluster(user_id: str, cluster: List[Dict[str, Any]]) -> Dict[str, Any]:
+	"""Use LLM to consolidate a cluster of related memories into a single golden record.
+
+	Args:
+		user_id: User ID for the memories
+		cluster: List of memory dicts to consolidate
+
+	Returns:
+		Dict with 'memory' (Memory object) and 'source_ids' (list of source IDs)
+	"""
+	from src.services.extract_utils import _call_llm_json
+	from datetime import datetime
+
+	# Format memories for prompt with timestamps for conflict resolution
+	# Sort by timestamp (oldest first) so LLM sees chronological order
+	def get_timestamp(mem: Dict[str, Any]) -> str:
+		meta = mem.get("metadata", {})
+		# Try created_at first, fall back to updated_at
+		ts = meta.get("created_at") or meta.get("updated_at") or ""
+		if ts:
+			# Format as date string if it's a valid timestamp
+			try:
+				if isinstance(ts, (int, float)):
+					return datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+				elif isinstance(ts, str):
+					# Already a string, extract date portion
+					return ts[:10] if len(ts) >= 10 else ts
+			except:
+				pass
+		return "unknown"
+
+	# Sort cluster by timestamp (oldest first)
+	sorted_cluster = sorted(cluster, key=lambda m: get_timestamp(m))
+
+	memories_text = "\n".join([
+		f"- [{get_timestamp(mem)}] {mem.get('content', '')}"
+		for mem in sorted_cluster
+	])
+
+	system_prompt = CONSOLIDATION_PROMPT.format(memories=memories_text)
+
+	try:
+		# Use the shared LLM call utility (supports OpenAI/xAI, retries, tracing)
+		response = _call_llm_json(system_prompt, {"action": "consolidate"}, expect_array=False)
+
+		if not response:
+			logger.warning("[consolidate.llm.empty] user_id=%s cluster_size=%s", user_id, len(cluster))
+			return {"memory": None, "source_ids": []}
+
+		# Parse response
+		content = response.get("content", "")
+		if not content:
+			logger.warning("[consolidate.parse.empty] user_id=%s", user_id)
+			return {"memory": None, "source_ids": []}
+
+		# Get max confidence from sources
+		source_confidences = [
+			float(mem.get("metadata", {}).get("confidence", 0.5))
+			for mem in cluster
+		]
+		max_confidence = max(source_confidences) if source_confidences else 0.9
+
+		# Merge tags from all sources (deduplicated)
+		all_tags = set()
+		for mem in cluster:
+			meta = mem.get("metadata", {})
+			tags = meta.get("tags", [])
+			if isinstance(tags, str):
+				try:
+					tags = json.loads(tags)
+				except:
+					tags = []
+			if isinstance(tags, list):
+				all_tags.update(tags)
+
+		# Get source IDs
+		source_ids = [mem.get("id") for mem in cluster if mem.get("id")]
+
+		# Create consolidated memory
+		memory = Memory(
+			user_id=user_id,
+			content=content,
+			layer="semantic",
+			type="explicit",
+			confidence=max_confidence,
+			embedding=generate_embedding(content),
+			metadata={
+				"source": "consolidation",
+				"tags": list(all_tags),
+				"consolidated_from": source_ids,
+				"consolidated_count": len(cluster)
+			}
+		)
+
+		logger.info("[consolidate.success] user_id=%s sources=%s content_len=%s",
+				   user_id, len(source_ids), len(content))
+
+		return {"memory": memory, "source_ids": source_ids}
+
+	except Exception as e:
+		logger.error("[consolidate.error] user_id=%s error=%s", user_id, e)
+		return {"memory": None, "source_ids": []}
 
 
 def _fetch_user_memories(user_id: str, limit: int = 200, offset: int = 0) -> List[Dict[str, Any]]:
@@ -160,6 +359,98 @@ def build_compaction_graph() -> StateGraph:
 		})
 		return state
 
+	def node_consolidate(state: Dict[str, Any]) -> Dict[str, Any]:
+		"""Consolidate semantically related memories into golden records."""
+		from src.services.tracing import start_span, end_span
+
+		user_id = str(state.get("user_id"))
+
+		# Skip if consolidation is disabled (default: True = skip)
+		if state.get("skip_consolidate", True):
+			logger.info("[graph.consolidate.skip] user_id=%s reason=skip_consolidate_flag", user_id)
+			return state
+
+		span = start_span("compaction_consolidate", input={
+			"user_id": user_id,
+		})
+
+		_t = _time.perf_counter()
+
+		# 1. Load all memories for user
+		limit = int(state.get("limit") or 500)
+		memories = _fetch_user_memories(user_id, limit=limit)
+
+		if len(memories) < 5:
+			logger.info("[graph.consolidate.skip] user_id=%s reason=too_few_memories count=%s", user_id, len(memories))
+			state.setdefault("metrics", {})
+			state["metrics"]["consolidated_count"] = 0
+			state["metrics"]["sources_removed"] = 0
+			end_span(output={"skipped": True, "reason": "too_few_memories"})
+			return state
+
+		# 2. Cluster by embedding similarity
+		clusters = _cluster_memories(memories, threshold=0.75)
+
+		if not clusters:
+			logger.info("[graph.consolidate.skip] user_id=%s reason=no_clusters", user_id)
+			state.setdefault("metrics", {})
+			state["metrics"]["consolidated_count"] = 0
+			state["metrics"]["sources_removed"] = 0
+			end_span(output={"skipped": True, "reason": "no_clusters"})
+			return state
+
+		# 3. For each cluster >= 3 memories: consolidate via LLM
+		consolidated_count = 0
+		sources_removed = 0
+		dry_run = state.get("dry_run", False)
+
+		for cluster in clusters:
+			result = _consolidate_cluster(user_id, cluster)
+
+			if result.get("memory") and result.get("source_ids"):
+				if dry_run:
+					logger.info("[graph.consolidate.dry_run] user_id=%s would_merge=%s",
+							   user_id, len(result["source_ids"]))
+					consolidated_count += 1
+					sources_removed += len(result["source_ids"])
+				else:
+					try:
+						# 4. Store consolidated, delete sources (transaction safety)
+						memory = result["memory"]
+						source_ids = result["source_ids"]
+
+						# Upsert consolidated memory first
+						upsert_memories(user_id, [memory])
+
+						# Delete source memories only after successful upsert
+						col = _get_collection()
+						col.delete(ids=source_ids)  # type: ignore[attr-defined]
+
+						consolidated_count += 1
+						sources_removed += len(source_ids)
+
+						logger.info("[graph.consolidate] merged %s → 1 user_id=%s",
+								   len(source_ids), user_id)
+					except Exception as exc:
+						logger.error("[graph.consolidate.error] user_id=%s error=%s", user_id, exc)
+						continue
+
+		state.setdefault("metrics", {})
+		state["metrics"]["consolidated_count"] = consolidated_count
+		state["metrics"]["sources_removed"] = sources_removed
+
+		latency_ms = int((_time.perf_counter() - _t) * 1000)
+		logger.info("[graph.consolidate.done] user_id=%s clusters=%s consolidated=%s sources_removed=%s latency_ms=%s",
+				   user_id, len(clusters), consolidated_count, sources_removed, latency_ms)
+
+		end_span(output={
+			"clusters": len(clusters),
+			"consolidated_count": consolidated_count,
+			"sources_removed": sources_removed,
+			"latency_ms": latency_ms
+		})
+		return state
+
 	def node_load(state: Dict[str, Any]) -> Dict[str, Any]:
 		from src.services.tracing import start_span, end_span
 		
@@ -175,15 +466,16 @@ def build_compaction_graph() -> StateGraph:
 		cands = _fetch_user_memories(user_id, limit=limit)
 		state["candidates"] = cands
 		
-		# Safety check: if no candidates, skip re-extraction
+		# Safety check: if no candidates, force skip re-extraction
+		# Otherwise, respect the caller's skip_reextract flag
 		if not cands:
 			logger.info("[graph.load.empty] user_id=%s no_candidates_found", user_id)
 			state["skip_reextract"] = True
-		else:
-			state["skip_reextract"] = False
+		# Note: We no longer override skip_reextract=True when candidates exist
+		# The caller's intent is respected (default: skip_reextract=True)
 		
 		latency_ms = int((_time.perf_counter() - _t) * 1000)
-		logger.info("[graph.load] user_id=%s loaded=%s latency_ms=%s", user_id, len(cands), latency_ms)
+		logger.info("[graph.load] user_id=%s loaded=%s skip_reextract=%s latency_ms=%s", user_id, len(cands), state.get("skip_reextract"), latency_ms)
 		
 		end_span(output={
 			"loaded_count": len(cands),
@@ -205,9 +497,9 @@ def build_compaction_graph() -> StateGraph:
 		
 		_t = _time.perf_counter()
 		
-		# Skip if no candidates were loaded
+		# Skip if flag is set (user requested skip or no candidates were loaded)
 		if state.get("skip_reextract", False):
-			logger.info("[graph.reextract.skip] user_id=%s no_candidates", user_id)
+			logger.info("[graph.reextract.skip] user_id=%s reason=skip_reextract_flag", user_id)
 			state["reextract"] = {"new_memories": [], "delete_ids": []}
 			end_span(output={"skipped": True})
 			return state
@@ -317,20 +609,22 @@ def build_compaction_graph() -> StateGraph:
 	graph.add_node("init", node_init)
 	graph.add_node("ttl", node_ttl)
 	graph.add_node("dedup", node_dedup)
+	graph.add_node("consolidate", node_consolidate)
 	graph.add_node("load", node_load)
 	graph.add_node("reextract", node_reextract)
 	graph.add_node("apply", node_apply)
 	graph.set_entry_point("init")
 	graph.add_edge("init", "ttl")
 	graph.add_edge("ttl", "dedup")
-	graph.add_edge("dedup", "load")
+	graph.add_edge("dedup", "consolidate")
+	graph.add_edge("consolidate", "load")
 	graph.add_edge("load", "reextract")
 	graph.add_edge("reextract", "apply")
 	graph.add_edge("apply", END)
 	return graph
 
 
-def run_compaction_graph(user_id: str, *, dry_run: bool = False, limit: int = 10000, skip_reextract: bool = True) -> Dict[str, Any]:
+def run_compaction_graph(user_id: str, *, dry_run: bool = False, limit: int = 10000, skip_reextract: bool = True, skip_consolidate: bool = False) -> Dict[str, Any]:
 	"""Run the minimal compaction graph for a single user and return the final state.
 
 	Args:
@@ -338,6 +632,7 @@ def run_compaction_graph(user_id: str, *, dry_run: bool = False, limit: int = 10
 		dry_run: If True, don't actually apply changes
 		limit: Max memories to process
 		skip_reextract: If True, skip expensive LLM re-extraction (default True for speed/cost)
+		skip_consolidate: If True, skip memory consolidation (default False - runs by default)
 	"""
 	from src.services.tracing import start_trace
 
@@ -349,13 +644,14 @@ def run_compaction_graph(user_id: str, *, dry_run: bool = False, limit: int = 10
 			"dry_run": dry_run,
 			"limit": limit,
 			"skip_reextract": skip_reextract,
+			"skip_consolidate": skip_consolidate,
 			"trigger": "manual"
 		}
 	)
 
 	graph = build_compaction_graph()
 	_t0 = _time.perf_counter()
-	initial = {"user_id": user_id, "dry_run": dry_run, "limit": limit, "skip_reextract": skip_reextract}
+	initial = {"user_id": user_id, "dry_run": dry_run, "limit": limit, "skip_reextract": skip_reextract, "skip_consolidate": skip_consolidate}
 	final: Dict[str, Any] = graph.compile().invoke(initial)  # type: ignore
 	final.setdefault("metrics", {})
 	final["metrics"]["duration_ms"] = int((_time.perf_counter() - _t0) * 1000)

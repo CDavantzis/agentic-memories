@@ -1,0 +1,217 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>1</storyId>
+    <title>Portfolio GET Endpoint</title>
+    <status>drafted</status>
+    <generatedAt>2025-12-14</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/3-1-portfolio-get-endpoint.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>chatbot (Annie)</asA>
+    <iWant>to fetch all portfolio holdings for a user via API</iWant>
+    <soThat>I can display the user's current portfolio and answer questions about it</soThat>
+    <tasks>
+      <task id="1" ac="1,2,3,4">Create portfolio router file with FastAPI APIRouter</task>
+      <task id="2" ac="2">Define Pydantic response models (HoldingResponse, PortfolioResponse)</task>
+      <task id="3" ac="1,2,3,4">Implement GET /v1/portfolio endpoint</task>
+      <task id="4" ac="1,3">Handle database queries with dict/tuple cursor pattern</task>
+      <task id="5" ac="1">Register router in app.py</task>
+      <task id="6" ac="1,2,3,4">Write unit tests for all acceptance criteria</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1" title="GET endpoint returns all holdings">
+      GET /v1/portfolio?user_id={uuid} returns all holdings with: ticker, asset_name, shares, avg_price, intent, timestamps.
+    </criterion>
+    <criterion id="AC2" title="Response structure">
+      Response follows schema: {user_id, holdings[], total_holdings, last_updated}. Each holding has: ticker, asset_name, shares, avg_price, intent, created_at, updated_at.
+    </criterion>
+    <criterion id="AC3" title="Empty portfolio handling">
+      User with no holdings returns empty array [] for holdings and total_holdings=0.
+    </criterion>
+    <criterion id="AC4" title="Validation errors">
+      Missing or invalid user_id returns 400 Bad Request with clear error message.
+    </criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/epic-portfolio-crud-api.md</path>
+        <title>Epic 3: Portfolio Direct CRUD API</title>
+        <section>Story 3.1, Database Schema, API Endpoints</section>
+        <snippet>Create direct CRUD API endpoints for portfolio management that bypass the memory extraction pipeline. GET /v1/portfolio returns all holdings for user with structure including ticker, asset_name, shares, avg_price, intent, timestamps.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Pattern: FastAPI Router with Dependency Injection</section>
+        <snippet>Clean separation of endpoints from main app. Router pattern with prefix, tags, response models. Uses get_timescale_conn() for database access.</snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <file>
+        <path>src/routers/profile.py</path>
+        <kind>router</kind>
+        <symbol>router</symbol>
+        <lines>1-100</lines>
+        <reason>Reference implementation for router pattern, Pydantic models, endpoint structure, logging, error handling</reason>
+      </file>
+      <file>
+        <path>src/services/portfolio_service.py</path>
+        <kind>service</kind>
+        <symbol>normalize_ticker, validate_enum, VALID_INTENTS</symbol>
+        <lines>1-100</lines>
+        <reason>Existing portfolio validation helpers - use for ticker normalization and intent validation</reason>
+      </file>
+      <file>
+        <path>src/app.py</path>
+        <kind>application</kind>
+        <symbol>app, include_router</symbol>
+        <lines>63-68</lines>
+        <reason>Router registration pattern - add portfolio router similar to profile router</reason>
+      </file>
+      <file>
+        <path>src/routers/__init__.py</path>
+        <kind>module</kind>
+        <symbol>profile</symbol>
+        <reason>Router exports - add portfolio export</reason>
+      </file>
+      <file>
+        <path>src/dependencies/timescale.py</path>
+        <kind>dependency</kind>
+        <symbol>get_timescale_conn, release_timescale_conn</symbol>
+        <reason>Database connection pattern for PostgreSQL queries</reason>
+      </file>
+      <file>
+        <path>tests/unit/test_profile_api.py</path>
+        <kind>test</kind>
+        <symbol>test_profile_api</symbol>
+        <reason>Reference test patterns for API endpoint testing with TestClient</reason>
+      </file>
+    </code>
+
+    <dependencies>
+      <python>
+        <package name="fastapi" version="0.111.0" />
+        <package name="pydantic" version="2.8.2" />
+        <package name="psycopg" version="latest" />
+        <package name="psycopg-pool" version="3.2.1" />
+        <package name="pytest" version="8.3.2" />
+      </python>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint source="epic-portfolio-crud-api.md">Use existing portfolio_holdings table from migrations 013-014</constraint>
+    <constraint source="epic-portfolio-crud-api.md">Intent values: hold, wants-to-buy, wants-to-sell, watch</constraint>
+    <constraint source="architecture.md">Follow existing router pattern from src/routers/profile.py</constraint>
+    <constraint source="story-1.5-learnings">Handle cursor results as both dict and tuple (psycopg3 compatibility)</constraint>
+    <constraint source="architecture.md">Use get_timescale_conn() / release_timescale_conn() pattern</constraint>
+    <constraint source="epic-portfolio-crud-api.md">Unique constraint: (user_id, UPPER(ticker), intent)</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>GET /v1/portfolio</name>
+      <kind>REST endpoint</kind>
+      <signature>GET /v1/portfolio?user_id={user_id}</signature>
+      <path>src/routers/portfolio.py (NEW)</path>
+    </interface>
+    <interface>
+      <name>get_timescale_conn</name>
+      <kind>function</kind>
+      <signature>get_timescale_conn() -> Connection</signature>
+      <path>src/dependencies/timescale.py</path>
+    </interface>
+    <interface>
+      <name>release_timescale_conn</name>
+      <kind>function</kind>
+      <signature>release_timescale_conn(conn: Connection) -> None</signature>
+      <path>src/dependencies/timescale.py</path>
+    </interface>
+    <interface>
+      <name>normalize_ticker</name>
+      <kind>function</kind>
+      <signature>normalize_ticker(ticker: Optional[str]) -> Optional[str]</signature>
+      <path>src/services/portfolio_service.py:42-56</path>
+    </interface>
+  </interfaces>
+
+  <database>
+    <table name="portfolio_holdings">
+      <schema>
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL,
+        ticker VARCHAR(20),
+        asset_name VARCHAR(255),
+        shares NUMERIC(18, 8),
+        avg_price NUMERIC(18, 8),
+        intent VARCHAR(20) CHECK (intent IN ('hold', 'wants-to-buy', 'wants-to-sell', 'watch')),
+        source_memory_id UUID,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        CONSTRAINT uq_user_ticker_intent UNIQUE (user_id, UPPER(ticker), intent)
+      </schema>
+      <query name="get_all_holdings">
+        SELECT ticker, asset_name, shares, avg_price, intent, created_at, updated_at
+        FROM portfolio_holdings
+        WHERE user_id = %s
+        ORDER BY ticker ASC
+      </query>
+    </table>
+  </database>
+
+  <tests>
+    <standards>
+      pytest framework with fixtures in tests/conftest.py. Unit tests in tests/unit/. Mock external dependencies (PostgreSQL) for unit tests. Use TestClient from FastAPI for endpoint tests.
+    </standards>
+    <locations>
+      <location>tests/unit/test_portfolio_api.py (NEW)</location>
+    </locations>
+    <ideas>
+      <idea ac="1">Test GET with valid user_id returns holdings list with all fields</idea>
+      <idea ac="2">Test response structure matches PortfolioResponse schema</idea>
+      <idea ac="3">Test GET with no holdings returns empty array and total_holdings=0</idea>
+      <idea ac="4">Test GET with missing user_id returns 400 Bad Request</idea>
+      <idea ac="4">Test GET with invalid user_id format returns 400</idea>
+      <idea ac="1,2">Test holdings are ordered by ticker ASC</idea>
+    </ideas>
+  </tests>
+
+  <implementation-guide>
+    <step n="1" title="Create portfolio router file">
+      Create src/routers/portfolio.py following profile.py structure:
+      - Import: FastAPI, Query, HTTPException, Pydantic BaseModel
+      - Import: get_timescale_conn, release_timescale_conn from dependencies
+      - Define router = APIRouter(prefix="/v1/portfolio", tags=["portfolio"])
+    </step>
+    <step n="2" title="Define Pydantic models">
+      - HoldingResponse: ticker(str), asset_name(Optional[str]), shares(float), avg_price(Optional[float]), intent(str), created_at(datetime), updated_at(datetime)
+      - PortfolioResponse: user_id(str), holdings(List[HoldingResponse]), total_holdings(int), last_updated(Optional[datetime])
+    </step>
+    <step n="3" title="Implement GET endpoint">
+      @router.get("", response_model=PortfolioResponse)
+      def get_portfolio(user_id: str = Query(..., description="User identifier")):
+          - Get connection with get_timescale_conn()
+          - Execute SELECT query on portfolio_holdings WHERE user_id
+          - Handle dict/tuple cursor results
+          - Build response with holdings list
+          - Return PortfolioResponse
+          - Use try/except/finally with release_timescale_conn()
+    </step>
+    <step n="4" title="Register router">
+      - Update src/routers/__init__.py to export portfolio
+      - Add to src/app.py: from src.routers import portfolio
+      - Add: app.include_router(portfolio.router)
+    </step>
+    <step n="5" title="Write tests">
+      Create tests/unit/test_portfolio_api.py with TestClient tests for all ACs
+    </step>
+  </implementation-guide>
+</story-context>
