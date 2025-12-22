@@ -74,6 +74,29 @@ def _run_daily_compaction() -> None:
     if r is None:
         logger.info("[maint.compaction] skipped: redis unavailable")
         return
+
+    # Distributed lock: only one worker should run compaction
+    lock_key = "compaction_lock:daily"
+    lock_ttl = 3600  # 1 hour max lock duration
+    worker_id = f"worker-{os.getpid()}"
+
+    # Try to acquire lock (NX = only set if not exists, EX = expiry)
+    acquired = r.set(lock_key, worker_id, nx=True, ex=lock_ttl)
+    if not acquired:
+        logger.info("[maint.compaction] skipped: another worker holds lock")
+        return
+
+    logger.info("[maint.compaction] lock acquired by %s", worker_id)
+
+    try:
+        _execute_compaction(r)
+    finally:
+        # Release lock
+        r.delete(lock_key)
+        logger.info("[maint.compaction] lock released by %s", worker_id)
+
+def _execute_compaction(r) -> None:
+    """Execute the actual compaction logic."""
     # Look at yesterday's activity set (the day we intend to compact)
     now = _dt.now(_tz.utc)
     day_key = (now - _td(days=1)).strftime("%Y%m%d")
