@@ -12,7 +12,7 @@ if [ "$ENVIRONMENT" = "dev" ]; then
     # Start uvicorn with debugpy (non-blocking)
     python -m debugpy --listen 0.0.0.0:$DEBUGGER_PORT -m uvicorn src.app:app --host 0.0.0.0 --port 8080
 else
-    echo "🚀 Production mode - starting uvicorn normally"
-    # Start uvicorn normally
-    uvicorn src.app:app --host 0.0.0.0 --port 8080
+    echo "🚀 Production mode - starting uvicorn with 10 workers"
+    # Start uvicorn with multiple workers for concurrent request handling
+    uvicorn src.app:app --host 0.0.0.0 --port 8080 --workers 10
 fi
