@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
+from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Message(BaseModel):
@@ -229,4 +230,175 @@ class NarrativeResponse(BaseModel):
     narrative: str
     summary: Optional[str] = None
     sources: List[dict] = Field(default_factory=list)
+
+
+# =============================================================================
+# Scheduled Intents API Models (Epic 5)
+# =============================================================================
+
+class TriggerSchedule(BaseModel):
+    """Schedule configuration for time-based triggers (cron, interval, once).
+
+    Used within ScheduledIntentCreate to define when a trigger should fire.
+    Only one of cron, interval_minutes, or trigger_at should be set based on trigger_type.
+    """
+    cron: Optional[str] = None
+    interval_minutes: Optional[int] = None
+    trigger_at: Optional[datetime] = None  # For 'once' trigger type
+    check_interval_minutes: Optional[int] = Field(default=5, ge=5)
+
+
+class TriggerCondition(BaseModel):
+    """Condition configuration for event-based triggers (price, silence, event, news).
+
+    Used within ScheduledIntentCreate to define the conditions that must be met.
+    Fields used depend on trigger_type:
+    - price: ticker, operator, value
+    - silence: threshold_hours
+    - event/news: keywords
+    """
+    ticker: Optional[str] = None
+    operator: Optional[str] = None  # '<', '>', '<=', '>=', '=='
+    value: Optional[float] = None
+    keywords: Optional[List[str]] = None
+    threshold_hours: Optional[int] = None
+
+
+class ScheduledIntentCreate(BaseModel):
+    """Request model for creating a new scheduled intent.
+
+    Defines a proactive trigger that can fire based on time (cron/interval/once)
+    or conditions (price/silence/event/calendar/news).
+    """
+    user_id: str
+    intent_name: str
+    description: Optional[str] = None
+    trigger_type: Literal["cron", "interval", "once", "price", "silence", "event", "calendar", "news"]
+    trigger_schedule: Optional[TriggerSchedule] = None
+    trigger_condition: Optional[TriggerCondition] = None
+    action_type: Literal["notify", "check_in", "briefing", "analysis", "reminder"] = "notify"
+    action_context: str
+    action_priority: Literal["low", "normal", "high", "critical"] = "normal"
+    expires_at: Optional[datetime] = None
+    max_executions: Optional[int] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class ScheduledIntentUpdate(BaseModel):
+    """Request model for updating an existing scheduled intent (PATCH/PUT).
+
+    All fields are optional to support partial updates.
+    """
+    intent_name: Optional[str] = None
+    description: Optional[str] = None
+    trigger_type: Optional[Literal["cron", "interval", "once", "price", "silence", "event", "calendar", "news"]] = None
+    trigger_schedule: Optional[TriggerSchedule] = None
+    trigger_condition: Optional[TriggerCondition] = None
+    action_type: Optional[Literal["notify", "check_in", "briefing", "analysis", "reminder"]] = None
+    action_context: Optional[str] = None
+    action_priority: Optional[Literal["low", "normal", "high", "critical"]] = None
+    enabled: Optional[bool] = None
+    expires_at: Optional[datetime] = None
+    max_executions: Optional[int] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class ScheduledIntentResponse(BaseModel):
+    """Response model for a scheduled intent with all database fields.
+
+    Represents the complete state of a scheduled intent including
+    scheduling state and execution results.
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    # Identity
+    id: UUID
+    user_id: str
+    intent_name: str
+    description: Optional[str] = None
+
+    # Trigger definition
+    trigger_type: str
+    trigger_schedule: Optional[Dict[str, Any]] = None
+    trigger_condition: Optional[Dict[str, Any]] = None
+
+    # Action configuration
+    action_type: str
+    action_context: str
+    action_priority: str
+
+    # Scheduling state
+    next_check: Optional[datetime] = None
+    last_checked: Optional[datetime] = None
+    last_executed: Optional[datetime] = None
+    execution_count: int = 0
+
+    # Execution results
+    last_execution_status: Optional[str] = None
+    last_execution_error: Optional[str] = None
+    last_message_id: Optional[str] = None
+
+    # Control
+    enabled: bool = True
+    expires_at: Optional[datetime] = None
+    max_executions: Optional[int] = None
+
+    # Audit
+    created_at: datetime
+    updated_at: datetime
+    created_by: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class IntentFireRequest(BaseModel):
+    """Request model for reporting intent execution results.
+
+    Sent by the proactive worker after attempting to fire an intent.
+    Records the execution outcome and timing metrics.
+    """
+    status: Literal["success", "failed", "gate_blocked", "condition_not_met"]
+    trigger_data: Optional[Dict[str, Any]] = None
+    gate_result: Optional[Dict[str, Any]] = None
+    message_id: Optional[str] = None
+    message_preview: Optional[str] = None
+    evaluation_ms: Optional[int] = None
+    generation_ms: Optional[int] = None
+    delivery_ms: Optional[int] = None
+    error_message: Optional[str] = None
+
+
+class IntentFireResponse(BaseModel):
+    """Response model after firing an intent.
+
+    Returns the updated intent state including next_check calculation.
+    """
+    intent_id: UUID
+    status: str
+    next_check: Optional[datetime] = None
+    enabled: bool
+    execution_count: int
+    was_disabled_reason: Optional[str] = None
+
+
+class IntentExecutionResponse(BaseModel):
+    """Response model for an intent execution history record.
+
+    Represents a single execution attempt with timing and result details.
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    intent_id: UUID
+    user_id: str
+    executed_at: datetime
+    trigger_type: str
+    trigger_data: Optional[Dict[str, Any]] = None
+    status: str
+    gate_result: Optional[Dict[str, Any]] = None
+    message_id: Optional[str] = None
+    message_preview: Optional[str] = None
+    evaluation_ms: Optional[int] = None
+    generation_ms: Optional[int] = None
+    delivery_ms: Optional[int] = None
+    error_message: Optional[str] = None
 

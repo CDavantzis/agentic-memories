@@ -17,3 +17,4 @@ psycopg[binary]
 psycopg-pool==3.2.1
 langfuse==2.36.0
 debugpy==1.8.0
+croniter==2.0.1
