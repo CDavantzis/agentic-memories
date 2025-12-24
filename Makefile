@@ -1,6 +1,6 @@
 # Makefile for agentic-memories
 
-.PHONY: help install venv test test-unit test-integration test-e2e test-all test-fast test-intents test-intents-e2e test-memory test-profile test-coverage start stop clean clean-all lint format docker-logs docker-shell docker-test
+.PHONY: help install venv test test-unit test-integration test-e2e test-all test-fast test-intents test-intents-e2e test-memory test-profile test-coverage start stop clean clean-all lint format docker-logs docker-shell docker-test gh gh-read gh-diff gh-write gh-update
 
 # Default target
 help: ## Show this help message
@@ -17,6 +17,9 @@ help: ## Show this help message
 	@echo ""
 	@echo "  Docker:"
 	@grep -E '^docker[a-zA-Z0-9_-]*:.*## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "    \033[36m%-18s\033[0m %s\n", $$1, $$2}'
+	@echo ""
+	@echo "  GitHub (use ENV=prod for production):"
+	@grep -E '^gh[a-zA-Z0-9_-]*:.*## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "    \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 # ============================================================
 # SETUP
@@ -26,7 +29,7 @@ install: venv ## Setup venv and install dependencies
 	@echo "Dependencies installed in .venv/"
 
 start: ## Start Docker containers
-	./run_docker.sh
+	./scripts/run_docker.sh
 	@echo "Application started at http://localhost:8080"
 
 stop: ## Stop Docker containers
@@ -124,8 +127,40 @@ docker-test: ## Run tests inside Docker container
 # CODE QUALITY
 # ============================================================
 
-lint: venv ## Run linter (ruff)
-	$(VENV) pip install -q ruff && ruff check .
+lint: venv ## Check linting (ruff). Use FIX=1 to auto-fix
+	$(VENV) pip install -q ruff
+ifdef FIX
+	$(VENV) ruff check --fix .
+else
+	$(VENV) ruff check .
+endif
 
-format: venv ## Format code (ruff)
-	$(VENV) pip install -q ruff && ruff format .
+format: venv ## Check formatting (ruff). Use FIX=1 to apply fixes
+	$(VENV) pip install -q ruff
+ifdef FIX
+	$(VENV) ruff format .
+else
+	$(VENV) ruff format --check .
+endif
+
+# ============================================================
+# GITHUB ENVIRONMENT MANAGEMENT
+# ============================================================
+
+# Default environment is dev
+ENV ?= dev
+
+gh: ## Interactive GitHub environment manager
+	@python3 scripts/github_env.py
+
+gh-read: ## Read GitHub environment variables/secrets
+	@python3 scripts/github_env.py read --env $(ENV)
+
+gh-diff: ## Show diff between local .env and GitHub
+	@python3 scripts/github_env.py diff --env $(ENV)
+
+gh-write: ## Write all .env values to GitHub (creates & overwrites)
+	@python3 scripts/github_env.py write --env $(ENV)
+
+gh-update: ## Sync changes to GitHub (add, update, delete)
+	@python3 scripts/github_env.py update --env $(ENV)

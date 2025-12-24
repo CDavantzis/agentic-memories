@@ -5,7 +5,7 @@ real TimescaleDB connections. They test the full intent lifecycle.
 
 Run with: pytest tests/integration/test_intents_e2e.py -v
 
-Requires: Docker container running (./run_docker.sh)
+Requires: Docker container running (./scripts/run_docker.sh)
 """
 import time
 import pytest
