@@ -439,8 +439,11 @@ class TestRequiredFieldsValidation:
         assert result.is_valid is False
         assert any("trigger_schedule.trigger_at required" in err for err in result.errors)
 
-    def test_price_missing_ticker_fails(self, service_no_db):
-        """Price type without ticker rejects."""
+    def test_price_partial_structured_fields_ok(self, service_no_db):
+        """Price type with partial structured fields passes (Story 6.2: expression alternative)."""
+        # Story 6.2: Price triggers can use EITHER structured fields OR expression
+        # With partial structured fields and no expression, validation passes
+        # (actual evaluation is done by Annie, not validation service)
         intent = make_intent(
             trigger_type="price",
             trigger_condition=TriggerCondition(operator=">", value=100.0)  # Missing ticker
@@ -448,32 +451,32 @@ class TestRequiredFieldsValidation:
 
         result = service_no_db.validate(intent)
 
-        assert result.is_valid is False
-        assert any("trigger_condition.ticker required" in err for err in result.errors)
+        # Story 6.2: Structured fields no longer strictly required (expression is alternative)
+        assert result.is_valid is True
 
-    def test_price_missing_operator_fails(self, service_no_db):
-        """Price type without operator rejects."""
+    def test_price_with_expression_no_structured_fields_ok(self, service_no_db):
+        """Price type with expression instead of structured fields passes (Story 6.2)."""
         intent = make_intent(
             trigger_type="price",
-            trigger_condition=TriggerCondition(ticker="AAPL", value=100.0)  # Missing operator
+            trigger_condition=TriggerCondition(expression="AAPL > 200", condition_type="price")
         )
 
         result = service_no_db.validate(intent)
 
-        assert result.is_valid is False
-        assert any("trigger_condition.operator required" in err for err in result.errors)
+        assert result.is_valid is True
 
-    def test_price_missing_value_fails(self, service_no_db):
-        """Price type without value rejects."""
+    def test_price_empty_condition_ok(self, service_no_db):
+        """Price type with empty condition passes (Story 6.2: no required condition fields)."""
+        # Story 6.2: Price triggers accept either structured fields or expression
         intent = make_intent(
             trigger_type="price",
-            trigger_condition=TriggerCondition(ticker="AAPL", operator=">")  # Missing value
+            trigger_condition=TriggerCondition()  # Empty - no structured fields, no expression
         )
 
         result = service_no_db.validate(intent)
 
-        assert result.is_valid is False
-        assert any("trigger_condition.value required" in err for err in result.errors)
+        # No required condition fields - actual validation happens at evaluation time
+        assert result.is_valid is True
 
     def test_price_all_fields_ok(self, service_no_db):
         """Price type with all required fields passes."""
@@ -486,17 +489,29 @@ class TestRequiredFieldsValidation:
 
         assert result.is_valid is True
 
-    def test_silence_missing_threshold_hours_fails(self, service_no_db):
-        """Silence type without threshold_hours rejects."""
+    def test_silence_empty_condition_ok(self, service_no_db):
+        """Silence type with empty condition passes (Story 6.2: expression alternative)."""
+        # Story 6.2: Silence triggers can use EITHER threshold_hours OR expression
         intent = make_intent(
             trigger_type="silence",
-            trigger_condition=TriggerCondition()  # Missing threshold_hours
+            trigger_condition=TriggerCondition()  # No threshold_hours, no expression
         )
 
         result = service_no_db.validate(intent)
 
-        assert result.is_valid is False
-        assert any("trigger_condition.threshold_hours required" in err for err in result.errors)
+        # Story 6.2: No required condition fields (expression is alternative)
+        assert result.is_valid is True
+
+    def test_silence_with_expression_no_threshold_ok(self, service_no_db):
+        """Silence type with expression instead of threshold_hours passes (Story 6.2)."""
+        intent = make_intent(
+            trigger_type="silence",
+            trigger_condition=TriggerCondition(expression="inactive_hours > 48", condition_type="silence")
+        )
+
+        result = service_no_db.validate(intent)
+
+        assert result.is_valid is True
 
     def test_silence_with_threshold_ok(self, service_no_db):
         """Silence type with threshold_hours passes."""
@@ -509,62 +524,16 @@ class TestRequiredFieldsValidation:
 
         assert result.is_valid is True
 
-    def test_event_missing_keywords_fails(self, service_no_db):
-        """Event type without keywords rejects."""
+    def test_portfolio_no_required_condition_fields_ok(self, service_no_db):
+        """Portfolio type with empty condition passes (expression field added in Epic 6)."""
         intent = make_intent(
-            trigger_type="event",
-            trigger_condition=TriggerCondition()  # Missing keywords
-        )
-
-        result = service_no_db.validate(intent)
-
-        assert result.is_valid is False
-        assert any("trigger_condition.keywords required" in err for err in result.errors)
-
-    def test_event_with_keywords_ok(self, service_no_db):
-        """Event type with keywords passes."""
-        intent = make_intent(
-            trigger_type="event",
-            trigger_condition=TriggerCondition(keywords=["earnings", "announcement"])
-        )
-
-        result = service_no_db.validate(intent)
-
-        assert result.is_valid is True
-
-    def test_news_missing_keywords_fails(self, service_no_db):
-        """News type without keywords rejects."""
-        intent = make_intent(
-            trigger_type="news",
+            trigger_type="portfolio",
             trigger_condition=TriggerCondition()
         )
 
         result = service_no_db.validate(intent)
 
-        assert result.is_valid is False
-        assert any("trigger_condition.keywords required" in err for err in result.errors)
-
-    def test_news_with_keywords_ok(self, service_no_db):
-        """News type with keywords passes."""
-        intent = make_intent(
-            trigger_type="news",
-            trigger_condition=TriggerCondition(keywords=["AAPL", "Apple"])
-        )
-
-        result = service_no_db.validate(intent)
-
-        assert result.is_valid is True
-
-    def test_calendar_no_condition_ok(self, service_no_db):
-        """Calendar type with no required condition fields (TBD) passes."""
-        intent = make_intent(
-            trigger_type="calendar",
-            trigger_condition=TriggerCondition()
-        )
-
-        result = service_no_db.validate(intent)
-
-        # Calendar has no required fields currently
+        # Portfolio has no required fields currently (expression added in Epic 6)
         assert result.is_valid is True
 
 
@@ -576,21 +545,21 @@ class TestMultipleErrorsValidation:
     """Tests for AC7: All errors returned in single response."""
 
     def test_multiple_errors_returned(self, service_no_db):
-        """Intent with 3 violations returns 3 errors."""
-        # Price type with missing all three required condition fields
+        """Intent with multiple violations returns all errors."""
+        # Cron type with too frequent schedule (violates both frequency and daily count)
+        # Every 30 seconds = 2880/day > 96 limit, and 30s < 60s minimum interval
         intent = make_intent(
-            trigger_type="price",
-            trigger_condition=None  # Missing ticker, operator, value
+            trigger_type="cron",
+            trigger_schedule=TriggerSchedule(cron="*/30 * * * * *")
         )
 
         result = service_no_db.validate(intent)
 
         assert result.is_valid is False
-        # Should have 3 errors for ticker, operator, value
-        assert len(result.errors) >= 3
-        assert any("ticker" in err for err in result.errors)
-        assert any("operator" in err for err in result.errors)
-        assert any("value" in err for err in result.errors)
+        # Should have at least 2 errors: frequency too high and daily count exceeded
+        assert len(result.errors) >= 2
+        assert any("frequent" in err.lower() or "second" in err.lower() for err in result.errors)
+        assert any("day" in err.lower() or "96" in err for err in result.errors)
 
     def test_no_short_circuit_cron_and_required(self, service_no_db):
         """All validations run even if required fields fail."""

@@ -67,7 +67,7 @@ class TriggerSchedule(BaseModel):
 
     # NEW: Timezone support
     timezone: str = Field(
-        default="UTC",
+        default="America/Los_Angeles",
         description="IANA timezone (e.g., 'America/Los_Angeles', 'Europe/London')"
     )
 ```
@@ -75,11 +75,11 @@ class TriggerSchedule(BaseModel):
 **Migration SQL:**
 ```sql
 ALTER TABLE scheduled_intents
-ADD COLUMN trigger_timezone VARCHAR(64) DEFAULT 'UTC';
+ADD COLUMN trigger_timezone VARCHAR(64) DEFAULT 'America/Los_Angeles';
 
 -- Update existing trigger_schedule JSONB to include timezone
 UPDATE scheduled_intents
-SET trigger_schedule = trigger_schedule || '{"timezone": "UTC"}'::jsonb
+SET trigger_schedule = trigger_schedule || '{"timezone": "America/Los_Angeles"}'::jsonb
 WHERE trigger_schedule IS NOT NULL;
 ```
 
@@ -135,7 +135,7 @@ ADD CONSTRAINT chk_fire_mode CHECK (fire_mode IN ('once', 'recurring'));
 
 -- Index for cooldown queries
 CREATE INDEX idx_intents_cooldown ON scheduled_intents (user_id, last_condition_fire)
-WHERE trigger_type IN ('price', 'silence', 'portfolio');
+WHERE trigger_type IN ('price', 'portfolio', 'silence');
 ```
 
 ### API Changes
@@ -273,11 +273,11 @@ While `action_context` remains a TEXT field (for flexibility), Annie expects a J
 
 **AC #1: Schema Migration**
 - Add `trigger_timezone` column to `scheduled_intents`
-- Default value: 'UTC'
-- Backfill existing records with 'UTC'
+- Default value: 'America/Los_Angeles'
+- Backfill existing records with 'America/Los_Angeles'
 
 **AC #2: TriggerSchedule Model**
-- Add `timezone: str` field with default 'UTC'
+- Add `timezone: str` field with default 'America/Los_Angeles'
 - Validate using `zoneinfo.ZoneInfo`
 - Return validation error for invalid timezones
 
@@ -475,7 +475,7 @@ Given trigger_type='portfolio', require:
 
 -- 1. Add timezone support
 ALTER TABLE scheduled_intents
-ADD COLUMN trigger_timezone VARCHAR(64) DEFAULT 'UTC';
+ADD COLUMN trigger_timezone VARCHAR(64) DEFAULT 'America/Los_Angeles';
 
 -- 2. Add condition expression fields
 ALTER TABLE scheduled_intents
@@ -497,7 +497,7 @@ DROP CONSTRAINT IF EXISTS chk_trigger_type;
 
 ALTER TABLE scheduled_intents
 ADD CONSTRAINT chk_trigger_type CHECK (
-    trigger_type IN ('cron', 'interval', 'once', 'price', 'silence', 'event', 'calendar', 'news', 'portfolio')
+    trigger_type IN ('cron', 'interval', 'once', 'price', 'silence', 'portfolio')
 );
 
 ALTER TABLE scheduled_intents
@@ -512,12 +512,12 @@ ADD CONSTRAINT chk_cooldown_hours CHECK (
 
 -- 6. Indexes
 CREATE INDEX idx_intents_cooldown ON scheduled_intents (user_id, last_condition_fire)
-WHERE trigger_type IN ('price', 'silence', 'portfolio');
+WHERE trigger_type IN ('price', 'portfolio', 'silence');
 
 -- 7. Backfill existing records
 UPDATE scheduled_intents
 SET
-    trigger_timezone = 'UTC',
+    trigger_timezone = 'America/Los_Angeles',
     cooldown_hours = 24,
     fire_mode = 'recurring'
 WHERE trigger_timezone IS NULL;

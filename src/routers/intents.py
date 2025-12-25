@@ -20,6 +20,7 @@ from src.schemas import (
     IntentFireRequest,
     IntentFireResponse,
     IntentExecutionResponse,
+    IntentClaimResponse,
 )
 from src.dependencies.timescale import get_timescale_conn, release_timescale_conn
 from src.services.intent_service import IntentService
@@ -249,6 +250,70 @@ def fire_intent(intent_id: UUID, request: IntentFireRequest):
         raise HTTPException(status_code=503, detail="Database temporarily unavailable")
     except Exception as e:
         logger.error("[intents.api.fire] intent_id=%s unexpected_error=%s", intent_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred")
+    finally:
+        if conn is not None:
+            release_timescale_conn(conn)
+
+
+# =============================================================================
+# POST /v1/intents/{id}/claim - Claim Intent for Processing (Story 6.3)
+# =============================================================================
+
+@router.post("/{intent_id}/claim", response_model=IntentClaimResponse)
+@observe(name="intents.claim")
+def claim_intent(intent_id: UUID):
+    """
+    Claim an intent for exclusive processing (Story 6.3).
+
+    Sets claimed_at to NOW() to prevent other workers from processing.
+    Uses FOR UPDATE SKIP LOCKED to prevent race conditions.
+
+    Returns 404 if intent not found.
+    Returns 409 if intent already claimed by another worker (within 5 min timeout).
+    Returns IntentClaimResponse with intent data and claimed_at on success.
+
+    Multi-worker Flow:
+        1. GET /v1/intents/pending - Get available intents (read-only)
+        2. POST /v1/intents/{id}/claim - Claim intent for processing (409 if already claimed)
+        3. [Process: evaluate condition, call LLM, send message]
+        4. POST /v1/intents/{id}/fire - Report result, clear claim, update next_check
+    """
+    logger.info("[intents.api.claim] intent_id=%s", intent_id)
+
+    conn = None
+    try:
+        conn = get_timescale_conn()
+        if conn is None:
+            logger.error("[intents.api.claim] database_unavailable")
+            raise HTTPException(status_code=500, detail="Database connection unavailable")
+
+        service = IntentService(conn)
+        result = service.claim_intent(intent_id)
+
+        if not result.success:
+            if result.conflict:
+                logger.info("[intents.api.claim] intent_id=%s conflict", intent_id)
+                raise HTTPException(status_code=409, detail=result.errors[0] if result.errors else "Intent already claimed")
+            if result.errors and "not found" in result.errors[0].lower():
+                logger.info("[intents.api.claim] intent_id=%s not_found", intent_id)
+                raise HTTPException(status_code=404, detail="Intent not found")
+            raise HTTPException(status_code=500, detail=result.errors[0] if result.errors else "Unknown error")
+
+        logger.info(
+            "[intents.api.claim] intent_id=%s claimed_at=%s",
+            intent_id, result.response.claimed_at
+        )
+
+        return result.response.model_dump(mode='json')
+
+    except HTTPException:
+        raise
+    except DatabaseError as e:
+        logger.error("[intents.api.claim] intent_id=%s database_error=%s", intent_id, e, exc_info=True)
+        raise HTTPException(status_code=503, detail="Database temporarily unavailable")
+    except Exception as e:
+        logger.error("[intents.api.claim] intent_id=%s unexpected_error=%s", intent_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail="An unexpected error occurred")
     finally:
         if conn is not None:

@@ -16,7 +16,9 @@ Validation Rules:
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, TYPE_CHECKING
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import logging
+import re
 
 from croniter import croniter
 
@@ -34,16 +36,40 @@ CRON_MAX_FIRES_PER_DAY = 96
 INTERVAL_MIN_MINUTES = 5
 
 # Required fields mapping by trigger type
+# Note: price and silence can use EITHER structured fields OR expression (Story 6.2)
 REQUIRED_FIELDS = {
     "cron": {"schedule": ["cron"]},
     "interval": {"schedule": ["interval_minutes"]},
     "once": {"schedule": ["trigger_at"]},
-    "price": {"condition": ["ticker", "operator", "value"]},
-    "silence": {"condition": ["threshold_hours"]},
-    "event": {"condition": ["keywords"]},
-    "calendar": {"condition": []},  # TBD - may need date field
-    "news": {"condition": ["keywords"]},
+    "price": {"condition": []},  # Accepts ticker/operator/value OR expression
+    "silence": {"condition": []},  # Accepts threshold_hours OR expression
+    "portfolio": {"condition": []},  # Accepts expression only
 }
+
+# Expression validation patterns (Story 6.2)
+# Price expression: TICKER OP VALUE (e.g., "NVDA < 130", "AAPL >= 200.50")
+PRICE_EXPR_PATTERN = re.compile(r'^[A-Z]{1,5}\s*[<>=!]{1,2}\s*[0-9.]+$')
+
+# Portfolio expression keywords
+PORTFOLIO_KEYWORDS = {
+    'any_holding_change', 'any_holding_up', 'any_holding_down',
+    'total_value', 'total_change'
+}
+
+# Portfolio expression patterns (Story 6.5 AC5.2)
+# Percentage patterns: any_holding_change > 5%, total_change >= -10%
+PORTFOLIO_PERCENTAGE_PATTERN = re.compile(
+    r'^(any_holding_change|any_holding_down|any_holding_up|total_change)\s*(>|>=|<|<=)\s*(-?\d+(\.\d+)?)%$',
+    re.IGNORECASE
+)
+# Absolute value pattern: total_value >= 100000
+PORTFOLIO_ABSOLUTE_PATTERN = re.compile(
+    r'^total_value\s*(>|>=|<|<=)\s*(-?\d+(\.\d+)?)$',
+    re.IGNORECASE
+)
+
+# Silence expression: inactive_hours > N
+SILENCE_EXPR_PATTERN = re.compile(r'^inactive_hours\s*>\s*\d+$')
 
 
 @dataclass
@@ -123,6 +149,18 @@ class IntentValidationService:
         if intent.trigger_type == "once":
             once_errors = self._validate_once_trigger(intent.trigger_schedule)
             errors.extend(once_errors)
+
+        # Epic 6 AC1.3: Validate timezone if present in trigger_schedule
+        if intent.trigger_schedule and intent.trigger_schedule.timezone:
+            timezone_errors = self._validate_timezone(intent.trigger_schedule.timezone)
+            errors.extend(timezone_errors)
+
+        # Epic 6 Story 6.2: Validate condition expression if present
+        if intent.trigger_condition:
+            expression_errors = self._validate_condition_expression(
+                intent.trigger_type, intent.trigger_condition
+            )
+            errors.extend(expression_errors)
 
         is_valid = len(errors) == 0
 
@@ -296,7 +334,7 @@ class IntentValidationService:
         - once: trigger_schedule.trigger_at
         - price: trigger_condition.ticker, operator, value
         - silence: trigger_condition.threshold_hours
-        - event/news: trigger_condition.keywords
+        - portfolio: trigger_condition.expression (Epic 6)
 
         Args:
             intent: The scheduled intent to validate
@@ -328,5 +366,127 @@ class IntentValidationService:
                     errors.append(f"trigger_condition.{field} required for type '{trigger_type}'")
                 elif getattr(intent.trigger_condition, field, None) is None:
                     errors.append(f"trigger_condition.{field} required for type '{trigger_type}'")
+
+        return errors
+
+    def _validate_timezone(self, tz: str) -> List[str]:
+        """Validate IANA timezone string (Epic 6 AC1.3).
+
+        Uses Python's zoneinfo module to validate timezone strings.
+        Valid timezones include 'America/Los_Angeles', 'Europe/London', 'UTC', etc.
+
+        Args:
+            tz: The timezone string to validate
+
+        Returns:
+            List with error message if invalid, empty list otherwise
+        """
+        errors: List[str] = []
+
+        if not tz:
+            errors.append("timezone cannot be empty. Use IANA format (e.g., 'America/Los_Angeles')")
+            return errors
+
+        try:
+            ZoneInfo(tz)
+            logger.debug("[intent.validation.timezone] tz=%s valid=true", tz)
+        except ZoneInfoNotFoundError:
+            errors.append(f"Invalid timezone: {tz}. Use IANA format (e.g., 'America/Los_Angeles')")
+            logger.info("[intent.validation.timezone] tz=%s valid=false", tz)
+
+        return errors
+
+    def _validate_condition_expression(
+        self, trigger_type: str, condition: TriggerCondition
+    ) -> List[str]:
+        """Validate condition expression format (Epic 6 Story 6.2 AC2.3, AC2.4).
+
+        Validates expression format based on condition_type or trigger_type.
+        Only checks format - actual evaluation happens in Annie.
+
+        Args:
+            trigger_type: The trigger type (price, portfolio, silence)
+            condition: The trigger condition with optional expression
+
+        Returns:
+            List of error messages for invalid expressions, empty list otherwise
+        """
+        errors: List[str] = []
+
+        # Skip if no expression provided (backward compatibility with structured fields)
+        if not condition.expression:
+            return errors
+
+        # Determine condition type from explicit field or trigger_type
+        cond_type = condition.condition_type or trigger_type
+
+        # Warn if both expression and structured fields are provided
+        has_structured_price = (
+            condition.ticker is not None or
+            condition.operator is not None or
+            condition.value is not None
+        )
+        has_structured_silence = condition.threshold_hours is not None
+
+        if condition.expression and (has_structured_price or has_structured_silence):
+            logger.warning(
+                "[intent.validation.expression] Both expression and structured fields provided. "
+                "Expression takes precedence. trigger_type=%s expression=%s",
+                trigger_type, condition.expression
+            )
+
+        # Validate based on condition type
+        if cond_type == "price":
+            if not PRICE_EXPR_PATTERN.match(condition.expression):
+                errors.append(
+                    f"Invalid price expression: '{condition.expression}'. "
+                    "Use format: 'TICKER OP VALUE' (e.g., 'NVDA < 130', 'AAPL >= 200')"
+                )
+                logger.info(
+                    "[intent.validation.expression] price expression invalid: %s",
+                    condition.expression
+                )
+
+        elif cond_type == "portfolio":
+            # Story 6.5 AC5.2: Validate portfolio expression with strict regex
+            expr_stripped = condition.expression.strip()
+            is_valid_percentage = PORTFOLIO_PERCENTAGE_PATTERN.match(expr_stripped)
+            is_valid_absolute = PORTFOLIO_ABSOLUTE_PATTERN.match(expr_stripped)
+
+            if not (is_valid_percentage or is_valid_absolute):
+                errors.append(
+                    f"Invalid portfolio expression: '{condition.expression}'. "
+                    f"Supported formats: 'any_holding_change > 5%', 'any_holding_down > 10%', "
+                    f"'any_holding_up >= 15%', 'total_change > 3%', 'total_value >= 100000'. "
+                    f"Supported keywords: {', '.join(sorted(PORTFOLIO_KEYWORDS))}"
+                )
+                logger.info(
+                    "[intent.validation.expression] portfolio expression invalid: %s",
+                    condition.expression
+                )
+
+        elif cond_type == "silence":
+            if not SILENCE_EXPR_PATTERN.match(condition.expression):
+                errors.append(
+                    f"Invalid silence expression: '{condition.expression}'. "
+                    "Use format: 'inactive_hours > N' (e.g., 'inactive_hours > 48')"
+                )
+                logger.info(
+                    "[intent.validation.expression] silence expression invalid: %s",
+                    condition.expression
+                )
+
+        else:
+            # Unknown condition type with expression - just log, don't error
+            logger.debug(
+                "[intent.validation.expression] Unknown condition type %s with expression: %s",
+                cond_type, condition.expression
+            )
+
+        if not errors:
+            logger.debug(
+                "[intent.validation.expression] valid=true type=%s expression=%s",
+                cond_type, condition.expression
+            )
 
         return errors

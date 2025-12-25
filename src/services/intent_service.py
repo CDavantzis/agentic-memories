@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Dict, Any
 from uuid import UUID
+from zoneinfo import ZoneInfo
 import logging
 import json
 
@@ -22,6 +23,7 @@ from src.schemas import (
     IntentFireRequest,
     IntentFireResponse,
     IntentExecutionResponse,
+    IntentClaimResponse,
 )
 from src.services.intent_validation import IntentValidationService, ValidationResult
 
@@ -71,6 +73,29 @@ class IntentHistoryResult:
     errors: Optional[List[str]] = None
 
 
+@dataclass
+class IntentClaimResult:
+    """Result of claiming an intent for exclusive processing (Story 6.3).
+
+    Attributes:
+        success: True if claim succeeded
+        response: The claim response with intent and claimed_at
+        conflict: True if intent was already claimed by another worker
+        errors: List of error messages if failed
+    """
+    success: bool
+    response: Optional[IntentClaimResponse] = None
+    conflict: bool = False
+    errors: Optional[List[str]] = None
+
+
+# Condition-based trigger types that support cooldown
+CONDITION_TRIGGER_TYPES = {"price", "silence", "portfolio"}
+
+# Claim expiration timeout in minutes
+CLAIM_TIMEOUT_MINUTES = 5
+
+
 class IntentService:
     """Service for managing scheduled intents.
 
@@ -117,10 +142,23 @@ class IntentService:
             )
             return IntentServiceResult(success=False, errors=validation_result.errors)
 
+        # Story 6.5 AC5.3: Apply default check_interval_minutes=15 for portfolio triggers
+        trigger_schedule = intent.trigger_schedule
+        if intent.trigger_type == "portfolio":
+            if trigger_schedule is None:
+                # Create a TriggerSchedule with portfolio default
+                trigger_schedule = TriggerSchedule(check_interval_minutes=15)
+            elif trigger_schedule.check_interval_minutes == 5:
+                # Override default of 5 with portfolio default of 15
+                # (only if not explicitly set - 5 is the model default)
+                trigger_schedule = TriggerSchedule(
+                    **{**trigger_schedule.model_dump(exclude_none=True), 'check_interval_minutes': 15}
+                )
+
         # Calculate initial next_check
         next_check = self._calculate_initial_next_check(
             intent.trigger_type,
-            intent.trigger_schedule
+            trigger_schedule
         )
 
         try:
@@ -128,8 +166,8 @@ class IntentService:
                 # Serialize schedule and condition to JSON
                 # Use mode='json' to properly serialize datetime objects
                 trigger_schedule_json = None
-                if intent.trigger_schedule:
-                    trigger_schedule_json = json.dumps(intent.trigger_schedule.model_dump(mode='json', exclude_none=True))
+                if trigger_schedule:
+                    trigger_schedule_json = json.dumps(trigger_schedule.model_dump(mode='json', exclude_none=True))
 
                 trigger_condition_json = None
                 if intent.trigger_condition:
@@ -510,16 +548,20 @@ class IntentService:
         """
         try:
             with self._conn.cursor() as cur:
+                now = datetime.now(timezone.utc)
+                claim_expiry = now - timedelta(minutes=CLAIM_TIMEOUT_MINUTES)
+
                 # Build query - uses idx_intents_pending partial index
-                # FOR UPDATE SKIP LOCKED prevents multiple workers from
-                # picking up the same pending intent simultaneously
+                # Story 6.3: Exclude recently claimed intents (claimed within 5 min)
+                # This is a READ-ONLY query - workers call claim() separately
                 query = """
                     SELECT * FROM scheduled_intents
                     WHERE enabled = true
                       AND next_check IS NOT NULL
                       AND next_check <= NOW()
+                      AND (claimed_at IS NULL OR claimed_at < %s)
                 """
-                params: List[Any] = []
+                params: List[Any] = [claim_expiry]
 
                 # Add optional user_id filter
                 if user_id is not None:
@@ -534,18 +576,32 @@ class IntentService:
                     query += " LIMIT %s"
                     params.append(limit)
 
-                # FOR UPDATE SKIP LOCKED: lock rows and skip already-locked ones
-                query += " FOR UPDATE SKIP LOCKED"
-
-                cur.execute(query, tuple(params) if params else None)
+                cur.execute(query, tuple(params))
                 rows = cur.fetchall()
 
-                # Commit immediately to release FOR UPDATE SKIP LOCKED row locks
-                # Without this, locks are held until the connection is reused for
-                # a write operation, blocking other workers from processing these intents
-                self._conn.commit()
+                # Convert rows to responses with in_cooldown flag (Story 6.3)
+                intents = []
+                for row in rows:
+                    intent = self._row_to_response(row)
 
-                intents = [self._row_to_response(row) for row in rows]
+                    # Calculate in_cooldown flag for condition-based triggers
+                    trigger_condition = row.get("trigger_condition") or {}
+                    cooldown_hours = trigger_condition.get("cooldown_hours", 24)
+                    last_condition_fire = row.get("last_condition_fire")
+
+                    is_in_cooldown, _ = self._check_cooldown(
+                        intent.trigger_type,
+                        last_condition_fire,
+                        cooldown_hours,
+                        now
+                    )
+
+                    # Add in_cooldown to metadata for Annie's flexibility
+                    intent_metadata = intent.metadata or {}
+                    intent_metadata["in_cooldown"] = is_in_cooldown
+                    intent.metadata = intent_metadata
+
+                    intents.append(intent)
 
                 logger.info(
                     "[intent.service.pending] user_id=%s count=%d",
@@ -558,6 +614,134 @@ class IntentService:
             logger.error("[intent.service.pending] user_id=%s error=%s", user_id, e)
             self._conn.rollback()
             return IntentServiceResult(success=False, errors=[f"Database error: {str(e)}"])
+
+    def claim_intent(self, intent_id: UUID) -> IntentClaimResult:
+        """Claim an intent for exclusive processing (Story 6.3, AC3.6).
+
+        Sets claimed_at to NOW() to prevent other workers from processing.
+        Uses FOR UPDATE SKIP LOCKED to prevent race conditions.
+
+        Args:
+            intent_id: The intent UUID to claim
+
+        Returns:
+            IntentClaimResult with claimed intent or conflict error
+        """
+        try:
+            with self._conn.cursor() as cur:
+                now = datetime.now(timezone.utc)
+
+                # Use FOR UPDATE SKIP LOCKED to prevent race on same intent
+                cur.execute(
+                    """
+                    SELECT * FROM scheduled_intents
+                    WHERE id = %s
+                    FOR UPDATE SKIP LOCKED
+                    """,
+                    (str(intent_id),)
+                )
+                row = cur.fetchone()
+
+                if row is None:
+                    # Either not found or locked by another worker
+                    # Check if intent exists at all
+                    cur.execute(
+                        "SELECT id FROM scheduled_intents WHERE id = %s",
+                        (str(intent_id),)
+                    )
+                    if cur.fetchone() is None:
+                        logger.info("[intent.service.claim] intent_id=%s not_found", intent_id)
+                        return IntentClaimResult(success=False, errors=["Intent not found"])
+                    else:
+                        logger.info("[intent.service.claim] intent_id=%s locked_by_another", intent_id)
+                        return IntentClaimResult(
+                            success=False,
+                            conflict=True,
+                            errors=["Intent is locked by another worker"]
+                        )
+
+                # Check if already claimed (within timeout)
+                claimed_at = row.get("claimed_at")
+                if claimed_at is not None:
+                    claim_expiry = now - timedelta(minutes=CLAIM_TIMEOUT_MINUTES)
+                    if claimed_at > claim_expiry:
+                        logger.info(
+                            "[intent.service.claim] intent_id=%s already_claimed claimed_at=%s",
+                            intent_id, claimed_at
+                        )
+                        return IntentClaimResult(
+                            success=False,
+                            conflict=True,
+                            errors=["Intent already claimed by another worker"]
+                        )
+
+                # Claim the intent
+                cur.execute(
+                    """
+                    UPDATE scheduled_intents
+                    SET claimed_at = %s, updated_at = NOW()
+                    WHERE id = %s
+                    RETURNING *
+                    """,
+                    (now, str(intent_id))
+                )
+                updated_row = cur.fetchone()
+                self._conn.commit()
+
+                intent_response = self._row_to_response(updated_row)
+
+                logger.info(
+                    "[intent.service.claim] intent_id=%s claimed_at=%s",
+                    intent_id, now
+                )
+
+                return IntentClaimResult(
+                    success=True,
+                    response=IntentClaimResponse(
+                        intent=intent_response,
+                        claimed_at=now
+                    )
+                )
+
+        except Exception as e:
+            logger.error("[intent.service.claim] intent_id=%s error=%s", intent_id, e)
+            self._conn.rollback()
+            return IntentClaimResult(success=False, errors=[f"Database error: {str(e)}"])
+
+    def _check_cooldown(
+        self,
+        trigger_type: str,
+        last_condition_fire: Optional[datetime],
+        cooldown_hours: int,
+        now: datetime
+    ) -> tuple[bool, Optional[float]]:
+        """Check if a condition-based trigger is in cooldown period (Story 6.3).
+
+        Args:
+            trigger_type: The type of trigger
+            last_condition_fire: Timestamp of last successful condition fire
+            cooldown_hours: Minimum hours between fires
+            now: Current timestamp (UTC)
+
+        Returns:
+            Tuple of (is_in_cooldown, remaining_hours)
+        """
+        # Cooldown only applies to condition-based triggers
+        if trigger_type not in CONDITION_TRIGGER_TYPES:
+            return False, None
+
+        # No cooldown if never fired
+        if last_condition_fire is None:
+            return False, None
+
+        # Calculate hours since last fire
+        hours_since_last = (now - last_condition_fire).total_seconds() / 3600
+
+        if hours_since_last < cooldown_hours:
+            remaining_hours = cooldown_hours - hours_since_last
+            return True, remaining_hours
+
+        return False, None
 
     def fire_intent(
         self,
@@ -592,6 +776,38 @@ class IntentService:
                 intent = self._row_to_response(row)
                 now = datetime.now(timezone.utc)
 
+                # Story 6.3: Check cooldown for condition-based triggers
+                trigger_condition = row.get("trigger_condition") or {}
+                cooldown_hours = trigger_condition.get("cooldown_hours", 24)
+                last_condition_fire = row.get("last_condition_fire")
+
+                is_in_cooldown, remaining_hours = self._check_cooldown(
+                    intent.trigger_type,
+                    last_condition_fire,
+                    cooldown_hours,
+                    now
+                )
+
+                if is_in_cooldown:
+                    # Return early with cooldown info - don't log to executions
+                    logger.info(
+                        "[intent.service.fire] intent_id=%s cooldown_active=true remaining_hours=%.2f",
+                        intent_id, remaining_hours
+                    )
+                    return IntentFireResult(
+                        success=True,
+                        response=IntentFireResponse(
+                            intent_id=intent_id,
+                            status="cooldown_active",
+                            next_check=intent.next_check,
+                            enabled=intent.enabled,
+                            execution_count=intent.execution_count,
+                            cooldown_active=True,
+                            cooldown_remaining_hours=remaining_hours,
+                            last_condition_fire=last_condition_fire,
+                        )
+                    )
+
                 # Always update last_checked (AC2)
                 new_last_checked = now
 
@@ -602,10 +818,17 @@ class IntentService:
                 new_last_message_id = intent.last_message_id
                 new_last_execution_error = request.error_message
 
+                # Story 6.3: Track last_condition_fire for condition-based triggers
+                new_last_condition_fire = last_condition_fire
+
                 if request.status == "success":
                     new_last_executed = now
                     new_execution_count = intent.execution_count + 1
                     new_last_message_id = request.message_id
+
+                    # Update last_condition_fire for condition-based triggers on success
+                    if intent.trigger_type in CONDITION_TRIGGER_TYPES:
+                        new_last_condition_fire = now
 
                 # Calculate next_check based on trigger type and result (AC4)
                 trigger_schedule = None
@@ -642,7 +865,21 @@ class IntentService:
                     new_enabled = False
                     was_disabled_reason = "expires_at passed"
 
-                # Update intent record in database (AC2, AC3, AC4, AC5)
+                # Story 6.4: Disable fire_mode='once' condition triggers after success
+                if (
+                    request.status == "success"
+                    and intent.trigger_type in CONDITION_TRIGGER_TYPES
+                    and trigger_condition.get("fire_mode") == "once"
+                ):
+                    new_enabled = False
+                    new_next_check = None
+                    was_disabled_reason = "fire_mode_once"
+                    logger.info(
+                        "[intents.fire] fire_mode_once disabled intent_id=%s",
+                        intent_id
+                    )
+
+                # Update intent record in database (AC2, AC3, AC4, AC5, Story 6.3, Story 6.4)
                 cur.execute(
                     """
                     UPDATE scheduled_intents
@@ -654,6 +891,8 @@ class IntentService:
                         last_message_id = %s,
                         next_check = %s,
                         enabled = %s,
+                        last_condition_fire = %s,
+                        claimed_at = NULL,
                         updated_at = NOW()
                     WHERE id = %s
                     """,
@@ -666,6 +905,7 @@ class IntentService:
                         new_last_message_id,
                         new_next_check,
                         new_enabled,
+                        new_last_condition_fire,
                         str(intent_id),
                     )
                 )
@@ -705,7 +945,7 @@ class IntentService:
 
                 self._conn.commit()
 
-                # Build response
+                # Build response with cooldown fields (Story 6.3)
                 response = IntentFireResponse(
                     intent_id=intent_id,
                     status=request.status,
@@ -713,6 +953,9 @@ class IntentService:
                     enabled=new_enabled,
                     execution_count=new_execution_count,
                     was_disabled_reason=was_disabled_reason,
+                    cooldown_active=False,
+                    cooldown_remaining_hours=None,
+                    last_condition_fire=new_last_condition_fire,
                 )
 
                 logger.info(
@@ -796,16 +1039,16 @@ class IntentService:
         status: str,
         now: datetime
     ) -> Optional[datetime]:
-        """Calculate next_check after firing based on trigger type and result (Story 5.6).
+        """Calculate next_check after firing based on trigger type and result (Story 5.6, Epic 6: timezone-aware).
 
         Args:
             trigger_type: The type of trigger
-            trigger_schedule: The schedule configuration
+            trigger_schedule: The schedule configuration (includes timezone)
             status: The execution status (success, failed, gate_blocked, condition_not_met)
-            now: Current timestamp
+            now: Current timestamp (should be UTC)
 
         Returns:
-            The calculated next_check datetime, or None for one-time triggers
+            The calculated next_check datetime in UTC, or None for one-time triggers
         """
         # Handle failure states with backoff (AC4)
         if status == "failed":
@@ -813,14 +1056,24 @@ class IntentService:
         elif status in ("gate_blocked", "condition_not_met"):
             return now + timedelta(minutes=5)
 
+        # Get timezone from schedule or use default
+        tz_str = "America/Los_Angeles"
+        if trigger_schedule and trigger_schedule.timezone:
+            tz_str = trigger_schedule.timezone
+
         # Handle success cases by trigger type
         if status == "success":
             if trigger_type == "cron" and trigger_schedule and trigger_schedule.cron:
                 try:
-                    cron = croniter(trigger_schedule.cron, now)
-                    return cron.get_next(datetime)
+                    # Calculate next occurrence in user's timezone, then convert to UTC
+                    tz = ZoneInfo(tz_str)
+                    now_local = now.astimezone(tz)
+                    cron = croniter(trigger_schedule.cron, now_local)
+                    next_local = cron.get_next(datetime)
+                    # Convert to UTC for storage
+                    return next_local.astimezone(timezone.utc)
                 except Exception as e:
-                    logger.warning("[intent.service.next_check_fire] cron_error=%s", e)
+                    logger.warning("[intent.service.next_check_fire] cron_error=%s tz=%s", e, tz_str)
                     return now + timedelta(minutes=5)
 
             elif trigger_type == "interval" and trigger_schedule and trigger_schedule.interval_minutes:
@@ -830,7 +1083,7 @@ class IntentService:
                 # One-time triggers: no next check after success
                 return None
 
-            elif trigger_type in ("price", "silence", "event", "calendar", "news"):
+            elif trigger_type in ("price", "silence", "portfolio"):
                 # Condition-based triggers: use check_interval_minutes or default 5
                 check_interval = 5  # default
                 if trigger_schedule and trigger_schedule.check_interval_minutes:
@@ -887,34 +1140,51 @@ class IntentService:
         trigger_type: str,
         trigger_schedule: Optional[TriggerSchedule]
     ) -> Optional[datetime]:
-        """Calculate initial next_check based on trigger type.
+        """Calculate initial next_check based on trigger type (Epic 6: timezone-aware).
 
         Args:
             trigger_type: The type of trigger
-            trigger_schedule: The schedule configuration
+            trigger_schedule: The schedule configuration (includes timezone)
 
         Returns:
-            The calculated next_check datetime, or None if not applicable
+            The calculated next_check datetime in UTC, or None if not applicable
         """
-        now = datetime.now(timezone.utc)
+        now_utc = datetime.now(timezone.utc)
+
+        # Get timezone from schedule or use default
+        tz_str = "America/Los_Angeles"
+        if trigger_schedule and trigger_schedule.timezone:
+            tz_str = trigger_schedule.timezone
 
         if trigger_type == "cron" and trigger_schedule and trigger_schedule.cron:
             try:
-                cron = croniter(trigger_schedule.cron, now)
-                return cron.get_next(datetime)
+                # Calculate next occurrence in user's timezone, then convert to UTC
+                tz = ZoneInfo(tz_str)
+                now_local = datetime.now(tz)
+                cron = croniter(trigger_schedule.cron, now_local)
+                next_local = cron.get_next(datetime)
+                # Convert to UTC for storage
+                return next_local.astimezone(timezone.utc)
             except Exception as e:
-                logger.warning("[intent.service.next_check] cron_error=%s", e)
-                return now
+                logger.warning("[intent.service.next_check] cron_error=%s tz=%s", e, tz_str)
+                return now_utc
 
         elif trigger_type == "interval" and trigger_schedule and trigger_schedule.interval_minutes:
-            return now + timedelta(minutes=trigger_schedule.interval_minutes)
+            return now_utc + timedelta(minutes=trigger_schedule.interval_minutes)
 
         elif trigger_type == "once" and trigger_schedule and trigger_schedule.trigger_at:
-            return trigger_schedule.trigger_at
+            # trigger_at is assumed to be in the user's timezone if naive, else use as-is
+            trigger_at = trigger_schedule.trigger_at
+            if trigger_at.tzinfo is None:
+                # Naive datetime: interpret in user's timezone
+                tz = ZoneInfo(tz_str)
+                trigger_at = trigger_at.replace(tzinfo=tz)
+            # Convert to UTC for storage
+            return trigger_at.astimezone(timezone.utc)
 
-        elif trigger_type in ("price", "silence", "event", "calendar", "news"):
+        elif trigger_type in ("price", "silence", "portfolio"):
             # Condition-based triggers: check immediately
-            return now
+            return now_utc
 
         # Default: no next_check
         return None

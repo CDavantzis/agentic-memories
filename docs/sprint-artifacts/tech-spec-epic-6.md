@@ -120,7 +120,20 @@ class TriggerCondition(BaseModel):
 - Validates expression format based on condition_type
 - Stores new fields in database
 
+**Updated GET /v1/intents/pending:**
+- Excludes recently claimed intents (claimed_at > NOW() - 5 minutes)
+- Adds `in_cooldown` flag to response for condition triggers
+- Read-only query with no side effects
+
+**NEW POST /v1/intents/{id}/claim:**
+- Claims an intent for exclusive processing
+- Returns 409 Conflict if already claimed (within 5 min timeout)
+- Uses `FOR UPDATE SKIP LOCKED` to prevent race conditions
+- Sets `claimed_at = NOW()` on success
+- Returns `IntentClaimResponse` with intent data and claimed_at
+
 **Updated POST /v1/intents/{id}/fire:**
+- Clears `claimed_at` after processing (releases claim)
 - Checks cooldown before processing condition triggers
 - Returns `cooldown_active: true` with remaining hours if in cooldown
 - Updates `last_condition_fire` on successful condition fires

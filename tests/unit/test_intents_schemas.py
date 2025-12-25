@@ -77,18 +77,12 @@ class TestTriggerCondition:
         condition = TriggerCondition(threshold_hours=24)
         assert condition.threshold_hours == 24
 
-    def test_valid_news_condition(self):
-        """TriggerCondition accepts valid news/event trigger fields."""
-        condition = TriggerCondition(keywords=["earnings", "AAPL", "announcement"])
-        assert condition.keywords == ["earnings", "AAPL", "announcement"]
-
     def test_all_fields_optional(self):
         """TriggerCondition allows all fields to be None."""
         condition = TriggerCondition()
         assert condition.ticker is None
         assert condition.operator is None
         assert condition.value is None
-        assert condition.keywords is None
         assert condition.threshold_hours is None
 
 
@@ -164,7 +158,7 @@ class TestScheduledIntentCreate:
 
     def test_valid_trigger_types(self):
         """ScheduledIntentCreate accepts all valid trigger_types."""
-        valid_types = ["cron", "interval", "once", "price", "silence", "event", "calendar", "news"]
+        valid_types = ["cron", "interval", "once", "price", "silence", "portfolio"]
         for trigger_type in valid_types:
             intent = ScheduledIntentCreate(
                 user_id="user-123",

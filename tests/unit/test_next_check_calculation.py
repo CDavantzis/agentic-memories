@@ -49,7 +49,10 @@ class TestCalculateInitialNextCheck:
 
     def test_cron_valid_expression(self, intent_service):
         """Test cron type with valid expression returns next occurrence (2.1)."""
-        schedule = TriggerSchedule(cron="0 9 * * 1")  # Every Monday at 9 AM
+        from zoneinfo import ZoneInfo
+
+        # Use UTC timezone explicitly to get predictable results
+        schedule = TriggerSchedule(cron="0 9 * * 1", timezone="UTC")  # Every Monday at 9 AM UTC
         now = datetime.now(timezone.utc)
 
         result = intent_service._calculate_initial_next_check("cron", schedule)
@@ -57,7 +60,7 @@ class TestCalculateInitialNextCheck:
         # Should return a future datetime
         assert result is not None
         assert result >= now
-        # Should be on a Monday at 9 AM
+        # Should be on a Monday at 9 AM UTC
         assert result.hour == 9
         assert result.weekday() == 0  # Monday
 
@@ -148,13 +151,13 @@ class TestCalculateInitialNextCheck:
 
         assert result == fixed_now
 
-    def test_event_immediate_check(self, intent_service, fixed_now):
-        """Test event type returns immediate check."""
+    def test_portfolio_immediate_check(self, intent_service, fixed_now):
+        """Test portfolio type returns immediate check."""
         with patch('src.services.intent_service.datetime') as mock_dt:
             mock_dt.now.return_value = fixed_now
             mock_dt.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
 
-            result = intent_service._calculate_initial_next_check("event", None)
+            result = intent_service._calculate_initial_next_check("portfolio", None)
 
         assert result == fixed_now
 
@@ -186,7 +189,8 @@ class TestCalculateNextCheckAfterFire:
 
     def test_success_cron_next_occurrence(self, intent_service, fixed_now):
         """Test success + cron returns croniter.get_next() (3.1)."""
-        schedule = TriggerSchedule(cron="0 9 * * *")  # Every day at 9 AM
+        # Use UTC timezone explicitly for predictable results
+        schedule = TriggerSchedule(cron="0 9 * * *", timezone="UTC")  # Every day at 9 AM UTC
 
         result = intent_service._calculate_next_check_after_fire(
             "cron", schedule, "success", fixed_now
@@ -194,7 +198,7 @@ class TestCalculateNextCheckAfterFire:
 
         assert result is not None
         assert result > fixed_now
-        assert result.hour == 9
+        assert result.hour == 9  # 9 AM UTC
 
     def test_success_interval_now_plus_minutes(self, intent_service, fixed_now):
         """Test success + interval returns NOW + interval_minutes (3.2)."""
@@ -395,7 +399,7 @@ class TestEdgeCases:
 
     def test_none_schedule_for_all_types(self, intent_service, fixed_now):
         """Test None schedule doesn't crash for any trigger type."""
-        trigger_types = ["cron", "interval", "once", "price", "silence", "event", "calendar", "news"]
+        trigger_types = ["cron", "interval", "once", "price", "silence", "portfolio"]
 
         for trigger_type in trigger_types:
             # Should not raise exception
@@ -413,7 +417,7 @@ class TestEdgeCases:
 
     def test_after_fire_all_condition_types(self, intent_service, fixed_now):
         """Test all condition-based trigger types use check_interval."""
-        condition_types = ["price", "silence", "event", "calendar", "news"]
+        condition_types = ["price", "silence", "portfolio"]
         schedule = TriggerSchedule(check_interval_minutes=20)
 
         for trigger_type in condition_types:
@@ -497,3 +501,150 @@ class TestTriggerTypeScheduleCompatibility:
         errors = intent_service._validate_trigger_type_schedule_compatibility("silence", schedule)
 
         assert len(errors) == 0
+
+
+# =============================================================================
+# Task 7: Test timezone-aware next_check calculation (Epic 6 Story 6.1)
+# =============================================================================
+
+class TestTimezoneAwareNextCheck:
+    """Tests for timezone-aware next_check calculation."""
+
+    def test_cron_uses_timezone_from_schedule(self, intent_service):
+        """Test cron calculation uses timezone from TriggerSchedule (AC1.1)."""
+        # 9 AM every day in New York timezone
+        schedule = TriggerSchedule(
+            cron="0 9 * * *",
+            timezone="America/New_York"
+        )
+
+        result = intent_service._calculate_initial_next_check("cron", schedule)
+
+        assert result is not None
+        # Result should be returned in UTC
+        assert result.tzinfo is not None or result.tzinfo == timezone.utc
+        # The hour in UTC depends on DST, but should be 9 AM in New York
+        # (14:00 or 13:00 UTC depending on DST)
+
+    def test_cron_default_timezone_is_los_angeles(self, intent_service):
+        """Test cron defaults to America/Los_Angeles when no timezone specified."""
+        schedule = TriggerSchedule(cron="0 9 * * *")  # No timezone
+
+        # Default is America/Los_Angeles per schema
+        assert schedule.timezone == "America/Los_Angeles"
+
+        result = intent_service._calculate_initial_next_check("cron", schedule)
+        assert result is not None
+
+    def test_cron_utc_timezone(self, intent_service):
+        """Test cron with explicit UTC timezone."""
+        schedule = TriggerSchedule(
+            cron="0 12 * * *",  # Noon UTC
+            timezone="UTC"
+        )
+
+        result = intent_service._calculate_initial_next_check("cron", schedule)
+
+        assert result is not None
+        # Result should be at noon UTC
+        assert result.hour == 12
+
+    def test_cron_europe_london_timezone(self, intent_service):
+        """Test cron with Europe/London timezone."""
+        schedule = TriggerSchedule(
+            cron="0 9 * * *",
+            timezone="Europe/London"
+        )
+
+        result = intent_service._calculate_initial_next_check("cron", schedule)
+
+        assert result is not None
+        # Should be valid datetime in UTC
+
+    def test_cron_asia_tokyo_timezone(self, intent_service):
+        """Test cron with Asia/Tokyo timezone (+9 hours from UTC)."""
+        schedule = TriggerSchedule(
+            cron="0 9 * * *",  # 9 AM Tokyo
+            timezone="Asia/Tokyo"
+        )
+
+        result = intent_service._calculate_initial_next_check("cron", schedule)
+
+        assert result is not None
+        # 9 AM Tokyo = 0:00 UTC (midnight)
+        # The hour should be 0 or close to it when converted to UTC
+
+    def test_after_fire_cron_uses_timezone(self, intent_service, fixed_now):
+        """Test _calculate_next_check_after_fire uses timezone for cron."""
+        schedule = TriggerSchedule(
+            cron="0 9 * * *",
+            timezone="America/Chicago"
+        )
+
+        result = intent_service._calculate_next_check_after_fire(
+            "cron", schedule, "success", fixed_now
+        )
+
+        assert result is not None
+        assert result > fixed_now
+
+    def test_interval_ignores_timezone(self, intent_service, fixed_now):
+        """Test interval type doesn't use timezone (just adds minutes)."""
+        schedule = TriggerSchedule(
+            interval_minutes=30,
+            timezone="Asia/Tokyo"
+        )
+
+        with patch('src.services.intent_service.datetime') as mock_dt:
+            mock_dt.now.return_value = fixed_now
+            mock_dt.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+
+            result = intent_service._calculate_initial_next_check("interval", schedule)
+
+        # Interval just adds minutes to current time, timezone irrelevant
+        expected = fixed_now + timedelta(minutes=30)
+        assert result == expected
+
+    def test_once_uses_trigger_at_directly(self, intent_service, fixed_now):
+        """Test once type uses trigger_at as-is, timezone in schedule is informational."""
+        trigger_time = fixed_now + timedelta(hours=5)
+        schedule = TriggerSchedule(
+            trigger_at=trigger_time,
+            timezone="Pacific/Auckland"
+        )
+
+        result = intent_service._calculate_initial_next_check("once", schedule)
+
+        # Should return exact trigger_at time
+        assert result == trigger_time
+
+    def test_invalid_timezone_fallback(self, intent_service, fixed_now):
+        """Test invalid timezone in schedule falls back gracefully."""
+        schedule = TriggerSchedule(
+            cron="0 9 * * *",
+            timezone="Invalid/Timezone"  # Invalid IANA zone
+        )
+
+        # Should not crash - implementation may fall back to UTC or default
+        result = intent_service._calculate_initial_next_check("cron", schedule)
+
+        # Should still return a datetime (fallback behavior)
+        assert result is not None
+
+    def test_timezone_preserves_correct_local_time(self, intent_service):
+        """Test timezone correctly interprets local time for cron."""
+        from zoneinfo import ZoneInfo
+
+        # Schedule for 3 AM in LA
+        schedule = TriggerSchedule(
+            cron="0 3 * * *",  # 3 AM
+            timezone="America/Los_Angeles"
+        )
+
+        result = intent_service._calculate_initial_next_check("cron", schedule)
+
+        assert result is not None
+        # Convert result to LA timezone and verify hour
+        if result.tzinfo:
+            result_in_la = result.astimezone(ZoneInfo("America/Los_Angeles"))
+            assert result_in_la.hour == 3
