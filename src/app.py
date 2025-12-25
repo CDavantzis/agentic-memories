@@ -522,8 +522,9 @@ def health_full() -> dict:
 	portfolio_ok = False
 	portfolio_error: Optional[str] = None
 	portfolio_tables = []
+	conn = None
 	try:
-		from src.dependencies.timescale import get_timescale_conn
+		from src.dependencies.timescale import get_timescale_conn, release_timescale_conn
 		conn = get_timescale_conn()
 		if conn:
 			with conn.cursor() as cur:
@@ -539,6 +540,9 @@ def health_full() -> dict:
 					portfolio_error = f"Missing tables: {set(['portfolio_holdings', 'portfolio_transactions', 'portfolio_preferences']) - set(portfolio_tables)}"
 	except Exception as exc:
 		portfolio_error = str(exc)
+	finally:
+		if conn:
+			release_timescale_conn(conn)
 	checks["portfolio"] = {"ok": portfolio_ok, "error": portfolio_error, "tables": portfolio_tables}
 
 	# Langfuse check (optional - tracing)
