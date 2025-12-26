@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 import logging
+from zoneinfo import ZoneInfo
 import os
 from typing import Any, Dict, List, Optional
 import json
@@ -201,10 +202,24 @@ def _start_scheduler() -> None:
         logger.info("[sched] failed to start: %s", exc)
 
 # Startup and shutdown events moved to lifespan context manager
+
+# Custom formatter to use America/Los_Angeles timezone
+class LATimezoneFormatter(logging.Formatter):
+    """Formatter that converts timestamps to America/Los_Angeles timezone."""
+    def __init__(self, fmt=None, datefmt=None, style='%'):
+        super().__init__(fmt, datefmt, style)
+        self.tz = ZoneInfo("America/Los_Angeles")
+
+    def formatTime(self, record, datefmt=None):
+        dt = datetime.fromtimestamp(record.created, tz=self.tz)
+        if datefmt:
+            return dt.strftime(datefmt)
+        return dt.strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
+
 logger = logging.getLogger("agentic_memories.api")
 if not logger.handlers:
     _handler = logging.StreamHandler()
-    _handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s"))
+    _handler.setFormatter(LATimezoneFormatter("%(asctime)s %(levelname)s [%(name)s] %(message)s"))
     logger.addHandler(_handler)
 _level_name = getenv("LOG_LEVEL", "INFO").upper()
 try:
@@ -218,7 +233,7 @@ logger.propagate = True
 _root = logging.getLogger()
 if not _root.handlers:
     _root_handler = logging.StreamHandler()
-    _root_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s"))
+    _root_handler.setFormatter(LATimezoneFormatter("%(asctime)s %(levelname)s [%(name)s] %(message)s"))
     _root.addHandler(_root_handler)
     _root.setLevel(_level)
 
