@@ -10,7 +10,6 @@ import logging
 
 from fastapi import APIRouter, Query, HTTPException, Response
 from fastapi.responses import JSONResponse
-from langfuse.decorators import observe
 from psycopg import Error as DatabaseError
 
 from src.schemas import (
@@ -35,7 +34,6 @@ router = APIRouter(prefix="/v1/intents", tags=["intents"])
 # =============================================================================
 
 @router.post("", response_model=ScheduledIntentResponse, status_code=201)
-@observe(name="intents.create")
 def create_intent(request: ScheduledIntentCreate):
     """
     Create a new scheduled intent.
@@ -97,7 +95,6 @@ def create_intent(request: ScheduledIntentCreate):
 # =============================================================================
 
 @router.get("", response_model=List[ScheduledIntentResponse])
-@observe(name="intents.list")
 def list_intents(
     user_id: str = Query(..., description="User identifier (required)"),
     trigger_type: Optional[str] = Query(None, description="Filter by trigger type"),
@@ -156,7 +153,6 @@ def list_intents(
 # =============================================================================
 
 @router.get("/pending", response_model=List[ScheduledIntentResponse])
-@observe(name="intents.pending")
 def get_pending_intents(
     user_id: Optional[str] = Query(None, description="Optional user filter")
 ):
@@ -204,7 +200,6 @@ def get_pending_intents(
 # =============================================================================
 
 @router.post("/{intent_id}/fire", response_model=IntentFireResponse)
-@observe(name="intents.fire")
 def fire_intent(intent_id: UUID, request: IntentFireRequest):
     """
     Report execution result and update intent state (Story 5.6).
@@ -261,7 +256,6 @@ def fire_intent(intent_id: UUID, request: IntentFireRequest):
 # =============================================================================
 
 @router.post("/{intent_id}/claim", response_model=IntentClaimResponse)
-@observe(name="intents.claim")
 def claim_intent(intent_id: UUID):
     """
     Claim an intent for exclusive processing (Story 6.3).
@@ -325,7 +319,6 @@ def claim_intent(intent_id: UUID):
 # =============================================================================
 
 @router.get("/{intent_id}/history", response_model=List[IntentExecutionResponse])
-@observe(name="intents.history")
 def get_intent_history(
     intent_id: UUID,
     limit: int = Query(50, ge=1, le=100, description="Maximum results (default 50, max 100)"),
@@ -380,7 +373,6 @@ def get_intent_history(
 # =============================================================================
 
 @router.get("/{intent_id}", response_model=ScheduledIntentResponse)
-@observe(name="intents.get")
 def get_intent(intent_id: UUID):
     """
     Get a single scheduled intent by ID.
@@ -425,7 +417,6 @@ def get_intent(intent_id: UUID):
 # =============================================================================
 
 @router.put("/{intent_id}", response_model=ScheduledIntentResponse)
-@observe(name="intents.update")
 def update_intent(intent_id: UUID, request: ScheduledIntentUpdate):
     """
     Update an existing scheduled intent.
@@ -478,7 +469,6 @@ def update_intent(intent_id: UUID, request: ScheduledIntentUpdate):
 # =============================================================================
 
 @router.delete("/{intent_id}", status_code=204)
-@observe(name="intents.delete")
 def delete_intent(intent_id: UUID):
     """
     Delete a scheduled intent by ID.
