@@ -4,10 +4,26 @@ Rollback Chroma collections - DELETE the memories collection.
 WARNING: This will delete all vector embeddings!
 
 For v2-only servers, this uses direct REST API calls.
+Uses only Python stdlib (no pip dependencies).
 """
 
+import json
 import os
-import requests
+import urllib.request
+import urllib.error
+from typing import Optional, Tuple
+
+
+def _request(url: str, *, method: str = "GET", data: Optional[dict] = None, timeout: int = 5) -> Tuple[int, str]:
+    """Minimal HTTP helper using stdlib."""
+    headers = {"Content-Type": "application/json"}
+    body = json.dumps(data).encode() if data else None
+    req = urllib.request.Request(url, data=body, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, resp.read().decode()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode()
 
 
 def main() -> None:
@@ -18,19 +34,18 @@ def main() -> None:
 
     collection_name = "memories_3072"
     base_url = f"http://{host}:{port}/api/v2"
-    headers = {"Content-Type": "application/json"}
 
     # Get collection ID
     try:
         collections_url = (
             f"{base_url}/tenants/{tenant}/databases/{database}/collections"
         )
-        resp = requests.get(collections_url, headers=headers, timeout=5)
-        if resp.status_code != 200:
-            print(f"⚠️  Could not list collections: {resp.status_code}")
+        status, body = _request(collections_url)
+        if status != 200:
+            print(f"⚠️  Could not list collections: {status}")
             return
 
-        collections = resp.json()
+        collections = json.loads(body)
         collection_id = None
         for c in collections:
             if c.get("name") == collection_name:
@@ -43,11 +58,11 @@ def main() -> None:
 
         # Delete collection
         delete_url = f"{base_url}/tenants/{tenant}/databases/{database}/collections/{collection_id}"
-        resp = requests.delete(delete_url, headers=headers, timeout=5)
-        if resp.status_code in (200, 204):
+        status, body = _request(delete_url, method="DELETE")
+        if status in (200, 204):
             print(f"✅ Deleted collection: {collection_name}")
         else:
-            print(f"⚠️  Delete failed ({resp.status_code}): {resp.text}")
+            print(f"⚠️  Delete failed ({status}): {body}")
     except Exception as e:
         print(f"⚠️  Could not delete collection: {e}")
 

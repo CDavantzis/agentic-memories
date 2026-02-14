@@ -140,7 +140,7 @@ Unlike traditional memory systems that treat data as static records, Agentic Mem
   
 - **🐳 Production Ready**
   - Docker Compose deployment
-  - External database dependencies
+  - All databases included (TimescaleDB, ChromaDB, Redis)
   - Environment-based configuration
   - Graceful error handling
 
@@ -228,313 +228,73 @@ Unlike traditional memory systems that treat data as static records, Agentic Mem
 
 ## 📦 Quick Start
 
-**TL;DR for Docker users**:
-```bash
-# 1. Clone the repository
-git clone https://github.com/ankitaa186/agentic-memories.git
-cd agentic-memories
-
-# 2. Start external databases
-cd ../agentic-memories-storage && ./docker-up.sh
-
-# 3. Set up Python environment (for migrations)
-cd ../agentic-memories
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# 4. Configure environment
-cp env.example .env
-# Edit .env with your OPENAI_API_KEY and other settings
-
-# 5. Run database migrations
-cd migrations
-bash migrate.sh up
-
-# 6. Start the application
-cd .. && ./scripts/run_docker.sh
-
-# 7. Verify everything is working
-curl http://localhost:8080/health/full | jq
-```
-
 ### Prerequisites
 
-- **Python 3.12+** (for running migrations)
-- **Docker & Docker Compose** (for running services)
-- **PostgreSQL client** (`psql`) - for database migrations
+- **Docker & Docker Compose** (v2+)
+- **An LLM API key** — [OpenAI](https://platform.openai.com/api-keys) or [xAI/Grok](https://console.x.ai/)
+- **`psql`** (PostgreSQL client) — for auto-running database migrations
   ```bash
-  # Ubuntu/Debian
-  sudo apt-get install postgresql-client
-  
   # macOS
   brew install postgresql
-  ```
-- **cypher-shell** (optional, for Neo4j migrations)
-  ```bash
-  # See migrations/README.md for installation instructions
-  # Or skip and run manually via Docker
-  ```
-- **External Dependencies**: `agentic-memories-storage` repository
-  - Provides: TimescaleDB, Neo4j, ChromaDB, Redis
-  - Quick start: `./docker-up.sh` in storage repo
-  - See: [agentic-memories-storage](https://github.com/ankitaa186/agentic-memories-storage)
 
-### 1. Clone the Repository
+  # Ubuntu/Debian
+  sudo apt-get install postgresql-client
+  ```
+
+All databases (TimescaleDB, ChromaDB, Redis) run inside Docker Compose. On startup, `migrate.sh` automatically applies any pending migrations.
+
+### Get Running
 
 ```bash
+# 1. Clone
 git clone https://github.com/ankitaa186/agentic-memories.git
 cd agentic-memories
+
+# 2. Start (interactive wizard on first run)
+make start
 ```
 
-### 2. Set Up External Databases
+On first run, an interactive setup wizard walks you through choosing your LLM provider and entering your API key. It then:
+- Writes your `.env` file
+- Validates all required environment variables
+- Starts TimescaleDB, ChromaDB, and Redis
+- Runs `migrate.sh up` to apply all database migrations
+- Auto-creates the ChromaDB tenant, database, and collection
+- Builds and starts the API and Web UI
 
-This project requires external databases. Deploy the companion storage repository:
+> **Prefer manual config?** Copy `env.example` to `.env`, edit your API key, then run `make start`.
 
-```bash
-# In a separate directory (parallel to agentic-memories)
-cd ..
-git clone https://github.com/ankitaa186/agentic-memories-storage.git
-cd agentic-memories-storage
-
-# Simple one-command startup
-./docker-up.sh
-```
-
-This provides:
-- **TimescaleDB** (PostgreSQL extension): `localhost:5433`
-- **Neo4j**: `localhost:7687` (UI: `localhost:7474`)
-- **ChromaDB**: `localhost:8000`
-- **Redis**: `localhost:6379`
-
-**Verify databases are running:**
-```bash
-# Check TimescaleDB
-psql "$TIMESCALE_DSN" -c "SELECT version();"
-
-# Check ChromaDB
-curl -s http://localhost:8000/api/v2/heartbeat
-
-# Check Neo4j (if cypher-shell installed)
-docker exec -i <neo4j-container> cypher-shell -u neo4j -p <password> "RETURN 1"
-```
-
-### 3. Configure Environment
-
-```bash
-cd ../agentic-memories
-cp env.example .env
-```
-
-Edit `.env` with your configuration:
-
-```bash
-# LLM Provider (required)
-LLM_PROVIDER=openai  # or "xai" for Grok
-OPENAI_API_KEY=sk-your_openai_key_here
-XAI_API_KEY=xai-your_xai_key_here  # if using Grok
-
-# Database connections (defaults match agentic-memories-storage)
-CHROMA_HOST=localhost
-CHROMA_PORT=8000
-CHROMA_TENANT=agentic-memories
-CHROMA_DATABASE=memories
-TIMESCALE_DSN=postgresql://postgres:<your-password>@localhost:5433/agentic_memories
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=<your-password>
-REDIS_URL=redis://localhost:6379/0
-
-# Scheduled maintenance (optional)
-SCHEDULED_MAINTENANCE_ENABLED=false  # Set to true for automatic compaction
-
-# Observability (optional)
-LANGFUSE_PUBLIC_KEY=pk-lf-your_key
-LANGFUSE_SECRET_KEY=sk-lf-your_key
-LANGFUSE_HOST=https://us.cloud.langfuse.com
-```
-
-### 4. Set Up Python Environment (for migrations)
-
-The migration system requires Python dependencies:
-
-```bash
-# Create and activate virtual environment
-python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### 5. Run Database Migrations
-
-**Important:** Keep the virtual environment activated for this step!
-
-```bash
-cd migrations
-
-# Set environment variables (if not using interactive prompts)
-export TIMESCALE_DSN="postgresql://postgres:<your-password>@localhost:5433/agentic_memories"
-export NEO4J_URI="bolt://localhost:7687"
-export NEO4J_USER="neo4j"
-export NEO4J_PASSWORD="<your-password>"
-export CHROMA_HOST="localhost"
-export CHROMA_PORT="8000"
-export CHROMA_TENANT="agentic-memories"
-export CHROMA_DATABASE="memories"
-
-# Run migrations
-bash migrate.sh up
-```
-
-**OR use the interactive menu:**
-```bash
-bash migrate.sh
-
-# Interactive menu will appear:
-# - For first-time setup: Select option 10 "Fresh install (DESTRUCTIVE)"
-# - For updates: Select option 1 "Run pending migrations (up)"
-```
-
-This will:
-- ✅ Create all TimescaleDB hypertables (episodic, emotional, portfolio snapshots)
-- ✅ Create all PostgreSQL tables (semantic, procedural, identity, portfolio holdings)
-- ✅ Create Neo4j graph constraints and indexes
-- ✅ Create ChromaDB collections (v2 API compatible)
-- ✅ Track applied migrations for incremental updates
-
-**Verify migrations:**
-```bash
-bash migrate.sh status
-```
-
-### 6. Start the Application
-
-**Using run_docker.sh (recommended)**:
-```bash
-cd ..  # Back to project root
-./scripts/run_docker.sh
-```
-
-This script will automatically:
-- ✅ Check if Docker is running
-- ✅ Create `.env` interactively if missing
-- ✅ Load and export environment variables
-- ✅ Verify ChromaDB connectivity with retry logic
-- ✅ Check and create required ChromaDB tenant/database
-- ✅ Check and create required collections (memories_3072)
-- ✅ Build and start all services (api, ui, redis)
-- ✅ Display service URLs
-
-**Manual Docker Compose (alternative)**:
-```bash
-# If you prefer direct control
-docker compose up -d
-```
-
-**Local Development (without Docker)**:
-```bash
-# Keep .venv activated
-# Ensure all environment variables are set
-source .env  # or export manually
-uvicorn src.app:app --reload --host 0.0.0.0 --port 8080
-```
-
-**Monitor logs:**
-```bash
-# Follow API logs
-docker compose logs -f api
-
-# All services
-docker compose logs -f
-
-# Last 100 lines
-docker compose logs --tail=100 api
-```
-
-**Stop services:**
-```bash
-docker compose down
-```
-
-### 7. Verify Everything is Working
-
-**Health Check:**
+**Verify:**
 ```bash
 curl -s http://localhost:8080/health/full | python3 -m json.tool
 ```
 
-Expected output:
-```json
-{
-  "status": "ok",
-  "time": "2025-10-20T03:06:22.272914+00:00",
-  "checks": {
-    "env": {
-      "required": ["OPENAI_API_KEY"],
-      "missing": [],
-      "provider": "openai"
-    },
-    "chroma": {"ok": true, "error": null},
-    "timescale": {"ok": true, "error": null},
-    "neo4j": {"ok": true, "error": null},
-    "redis": {"ok": true, "error": null},
-    "portfolio": {
-      "ok": true,
-      "error": null,
-      "tables": ["portfolio_holdings", "portfolio_preferences", "portfolio_transactions"]
-    },
-    "langfuse": {"ok": true, "error": null, "enabled": true}
-  }
-}
-```
+### Services
 
-**Test Memory Storage:**
+| Service | URL |
+|---------|-----|
+| API | http://localhost:8080 |
+| API Docs (Swagger) | http://localhost:8080/docs |
+| Web UI | http://localhost:3000 |
+| TimescaleDB | `localhost:5432` |
+| ChromaDB | `localhost:8000` |
+| Redis | `localhost:6379` |
+
+### Common Commands
+
 ```bash
-curl -X POST http://localhost:8080/v1/store \
-  -H "Content-Type: application/json" \
-  -d '{
-    "user_id": "test-user",
-    "history": [
-      {
-        "role": "user",
-        "content": "I bought 500 shares of NVDA at $450. Planning to hold long-term for AI growth."
-      }
-    ]
-  }'
+make start              # Start all services
+make stop               # Stop all services
+make logs               # Tail logs (all services)
+make logs SERVICE=api   # Tail API logs only
+make test               # Run unit + integration tests
+make test-e2e           # Run E2E tests (requires running services)
 ```
-
-**Test Retrieval:**
-```bash
-curl -s "http://localhost:8080/v1/retrieve?user_id=test-user&query=my+portfolio" | python3 -m json.tool
-```
-
-### 8. Access the Services
-
-- **API**: http://localhost:8080
-- **API Docs**: http://localhost:8080/docs
-- **UI**: http://localhost:3000
-- **Health Check**: http://localhost:8080/health/full
-
-**External Databases:**
-- **TimescaleDB**: `localhost:5433`
-- **Neo4j Browser**: http://localhost:7474
-- **ChromaDB**: `localhost:8000`
-- **Redis**: `localhost:6379`
 
 ### Troubleshooting
 
-**Issue: DNS resolution errors in Docker**
+**ChromaDB "default_tenant" not found** — The startup script auto-creates the tenant and database. If it fails, create them manually:
 ```bash
-# Add to docker-compose.yml under api service:
-extra_hosts:
-  - "host.docker.internal:host-gateway"
-```
-
-**Issue: ChromaDB "default_tenant" not found**
-```bash
-# Create tenant and database
 curl -X POST http://localhost:8000/api/v2/tenants \
   -H "Content-Type: application/json" \
   -d '{"name":"agentic-memories"}'
@@ -544,37 +304,18 @@ curl -X POST http://localhost:8000/api/v2/tenants/agentic-memories/databases \
   -d '{"name":"memories"}'
 ```
 
-**Issue: Migration errors**
+**Migration errors on existing data** — `migrate.sh` tracks applied migrations and only runs pending ones. To start completely fresh: `rm -rf data/ && make start`.
+
+**Advanced migrations** — For incremental migrations, rollbacks, or dry-run mode, see the [Migration Guide](migrations/README.md):
 ```bash
-# Check migration status
-cd migrations && bash migrate.sh status
-
-# View migration history
-bash migrate.sh history
-
-# Force unlock if stuck
-bash migrate.sh unlock
+make migrate            # Interactive migration menu
 ```
 
-**Issue: "psql command not found"**
-```bash
-# Install PostgreSQL client
-sudo apt-get install postgresql-client  # Ubuntu/Debian
-brew install postgresql                  # macOS
-```
-
-**Issue: "ModuleNotFoundError: No module named 'chromadb'"**
-```bash
-# Ensure venv is activated and dependencies installed
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-For more detailed troubleshooting, see [migrations/README.md](migrations/README.md).
+For more troubleshooting, see [migrations/README.md](migrations/README.md).
 
 ---
 
-### 9. Try Your First Memory!
+### Try Your First Memory!
 
 ```bash
 curl -X POST http://localhost:8080/v1/store \
@@ -1171,50 +912,32 @@ agentic-memories/
 
 ### Running Tests
 
-**Unit Tests**:
 ```bash
-pytest tests/ -v
-```
-
-**End-to-End Tests**:
-```bash
-cd tests/e2e
-./run_e2e_tests.sh
+make test               # Unit + integration tests
+make test-fast          # Unit tests only (fastest)
+make test-e2e           # E2E tests (requires running services)
+make test-all           # All tests including E2E
+make test-coverage      # Tests with coverage report
 ```
 
 **UI Tests (Playwright)**:
-  ```bash
-  cd ui
-npm test
+```bash
+cd ui && npm test
 ```
 
 ### Migration Management
 
-Our enhanced migration system supports:
-- ✅ Rollback to previous versions
-- ✅ Dry-run mode for safety
-- ✅ Migration validation
-- ✅ History tracking
-- ✅ Concurrency locking
+Migrations run automatically on `make start`. For manual control:
 
-**Common Commands**:
-  ```bash
-cd migrations
-
-# Run interactively (recommended)
-./migrate.sh
+```bash
+make migrate                        # Interactive migration menu
 
 # Or use direct commands:
-./migrate.sh up              # Apply pending migrations
-./migrate.sh up --dry-run    # Preview changes
-./migrate.sh down 2          # Rollback 2 migrations
-./migrate.sh status          # Check migration status
-./migrate.sh history 20      # Show last 20 migrations
-./migrate.sh validate        # Check for issues
-./migrate.sh fresh           # Fresh install (⚠️ DESTRUCTIVE)
-
-# Generate new migration
-./generate.sh postgres add_user_preferences
+./migrations/migrate.sh up          # Apply pending migrations
+./migrations/migrate.sh up --dry-run # Preview changes
+./migrations/migrate.sh down 2      # Rollback 2 migrations
+./migrations/migrate.sh status      # Check migration status
+./migrations/migrate.sh fresh       # Fresh install (DESTRUCTIVE)
 ```
 
 See [migrations/README.md](migrations/README.md) for full documentation.
@@ -1227,32 +950,27 @@ See [migrations/README.md](migrations/README.md) for full documentation.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `LLM_PROVIDER` | ✅ | `openai` | LLM provider: `openai` or `xai` (Grok) |
-| `OPENAI_API_KEY` | ✅ (if openai) | - | OpenAI API key |
-| `XAI_API_KEY` | ✅ (if xai) | - | xAI (Grok) API key |
-| `EXTRACTION_MODEL` | ❌ | `gpt-4o` | Model for extraction |
-| `EMBEDDING_MODEL` | ❌ | `text-embedding-3-large` | Embedding model (3072-dim) |
-| `CHROMA_HOST` | ✅ | `localhost` | ChromaDB host |
-| `CHROMA_PORT` | ✅ | `8000` | ChromaDB port |
-| `TIMESCALE_DSN` | ✅ | - | PostgreSQL/TimescaleDB connection string |
-| `NEO4J_URI` | ✅ | `bolt://localhost:7687` | Neo4j connection URI |
-| `NEO4J_USER` | ✅ | `neo4j` | Neo4j username |
-| `NEO4J_PASSWORD` | ✅ | `password` | Neo4j password |
-| `REDIS_URL` | ❌ | `redis://localhost:6379/0` | Redis connection string |
+| `LLM_PROVIDER` | ✅ | `openai` | Extraction model provider: `openai` or `xai` (Grok) |
+| `OPENAI_API_KEY` | ✅ | - | OpenAI API key (always required — used for embeddings) |
+| `XAI_API_KEY` | ✅ (if xai) | - | xAI API key (only if using Grok for extraction) |
+| `EXTRACTION_MODEL_OPENAI` | ❌ | `gpt-4o` | OpenAI model for extraction |
+| `EXTRACTION_MODEL_XAI` | ❌ | `grok-4-fast-reasoning` | xAI model for extraction |
+| `POSTGRES_PASSWORD` | ❌ | `changeme` | Password for TimescaleDB (used by docker-compose) |
 | `LANGFUSE_PUBLIC_KEY` | ❌ | - | Langfuse public key (for tracing) |
 | `LANGFUSE_SECRET_KEY` | ❌ | - | Langfuse secret key |
 | `LANGFUSE_HOST` | ❌ | `https://us.cloud.langfuse.com` | Langfuse host |
 
+> Database connection strings (`TIMESCALE_DSN`, `CHROMA_HOST`, `REDIS_URL`, etc.) are pre-configured in `docker-compose.yml` and don't need to be set manually.
+
 ### Docker Deployment
 
-**Important**: When using Docker, unset exported environment variables to avoid overriding `.env`:
+All services (API, UI, databases) are defined in `docker-compose.yml`. Use `make start` / `make stop` for normal operation. For direct control:
 
 ```bash
-unset CHROMA_HOST TIMESCALE_DSN NEO4J_URI
-docker-compose down && docker-compose up -d
+docker compose up -d        # Start all services
+docker compose down          # Stop all services
+docker compose logs -f api   # Follow API logs
 ```
-
-The containers will use `host.docker.internal` to access external databases.
 
 ---
 

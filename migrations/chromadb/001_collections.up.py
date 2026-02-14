@@ -6,10 +6,26 @@ Run this against the configured CHROMA_HOST/CHROMA_PORT.
 Creates: memories_3072 (default collection for 3072-dim embeddings)
 
 For v2-only servers, this uses direct REST API calls to avoid client validation issues.
+Uses only Python stdlib (no pip dependencies).
 """
 
+import json
 import os
-import requests
+import urllib.request
+import urllib.error
+from typing import Optional, Tuple
+
+
+def _request(url: str, *, method: str = "GET", data: Optional[dict] = None, timeout: int = 5) -> Tuple[int, str]:
+    """Minimal HTTP helper using stdlib."""
+    headers = {"Content-Type": "application/json"}
+    body = json.dumps(data).encode() if data else None
+    req = urllib.request.Request(url, data=body, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, resp.read().decode()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode()
 
 
 def main() -> None:
@@ -19,12 +35,11 @@ def main() -> None:
     database = os.getenv("CHROMA_DATABASE", "memories")
 
     base_url = f"http://{host}:{port}/api/v2"
-    headers = {"Content-Type": "application/json"}
 
     # Check if v2 API is available
     try:
-        resp = requests.get(f"{base_url}/heartbeat", timeout=5)
-        if resp.status_code != 200:
+        status, _ = _request(f"{base_url}/heartbeat")
+        if status != 200:
             print("❌ Chroma v2 API not available; this migration requires v2")
             return
     except Exception as e:
@@ -33,28 +48,25 @@ def main() -> None:
 
     # Create tenant (idempotent)
     try:
-        resp = requests.post(
-            f"{base_url}/tenants", json={"name": tenant}, headers=headers, timeout=5
-        )
-        if resp.status_code in (200, 201, 409):  # 409 = already exists
+        status, body = _request(f"{base_url}/tenants", method="POST", data={"name": tenant})
+        if status in (200, 201, 409):  # 409 = already exists
             print(f"✅ Ensured tenant exists: {tenant}")
         else:
-            print(f"⚠️  Tenant creation returned {resp.status_code}: {resp.text}")
+            print(f"⚠️  Tenant creation returned {status}: {body}")
     except Exception as e:
         print(f"⚠️  Could not create tenant {tenant}: {e}")
 
     # Create database (idempotent)
     try:
-        resp = requests.post(
+        status, body = _request(
             f"{base_url}/tenants/{tenant}/databases",
-            json={"name": database},
-            headers=headers,
-            timeout=5,
+            method="POST",
+            data={"name": database},
         )
-        if resp.status_code in (200, 201, 409):
+        if status in (200, 201, 409):
             print(f"✅ Ensured database exists: {tenant}/{database}")
         else:
-            print(f"⚠️  Database creation returned {resp.status_code}: {resp.text}")
+            print(f"⚠️  Database creation returned {status}: {body}")
     except Exception as e:
         print(f"⚠️  Could not create database {database}: {e}")
 
@@ -66,9 +78,9 @@ def main() -> None:
 
     # Check if collection exists
     try:
-        resp = requests.get(collection_endpoint, headers=headers, timeout=5)
-        if resp.status_code == 200:
-            existing_collections = resp.json()
+        status, body = _request(collection_endpoint)
+        if status == 200:
+            existing_collections = json.loads(body)
             exists = any(c.get("name") == collection_name for c in existing_collections)
             if exists:
                 print(f"ℹ️  Collection already exists: {collection_name}")
@@ -87,13 +99,11 @@ def main() -> None:
                 "created_by": "migration",
             },
         }
-        resp = requests.post(
-            collection_endpoint, json=payload, headers=headers, timeout=5
-        )
-        if resp.status_code in (200, 201):
+        status, body = _request(collection_endpoint, method="POST", data=payload)
+        if status in (200, 201):
             print(f"✅ Created collection: {collection_name}")
         else:
-            print(f"❌ Collection creation failed ({resp.status_code}): {resp.text}")
+            print(f"❌ Collection creation failed ({status}): {body}")
     except Exception as e:
         print(f"❌ Could not create collection: {e}")
 

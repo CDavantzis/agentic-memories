@@ -49,6 +49,7 @@ Thumbs.db
 
 # Persistent data (database volumes)
 data/
+data-backup/
 
 # Node (if present)
 node_modules/
