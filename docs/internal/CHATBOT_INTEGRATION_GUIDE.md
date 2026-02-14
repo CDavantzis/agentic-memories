@@ -596,14 +596,13 @@ curl -X POST http://localhost:8080/v1/maintenance \
 - Promotes important short-term memories to long-term storage
 - Archives old memories to keep the active set lean
 
-You can also explicitly forget memories:
+To delete individual memories, use the direct deletion endpoint:
 
 ```bash
-# Forget memories by scope (applies globally)
-curl -X POST http://localhost:8080/v1/forget \
-  -H 'Content-Type: application/json' \
-  -d '{"scopes": ["short-term"], "dry_run": false}'
+curl -X DELETE 'http://localhost:8080/v1/memories/mem_abc123?user_id=user_123'
 ```
+
+> **Note:** The `POST /v1/forget` endpoint exists but is currently a stub (not yet implemented). It accepts `scopes` and `dry_run` but does not perform any actual deletion.
 
 ---
 
@@ -736,7 +735,7 @@ User: How's everything going?
 | Endpoint | Method | Use Case |
 |----------|--------|----------|
 | `/v1/memories/{id}` | DELETE | Delete a memory |
-| `/v1/forget` | POST | Bulk forget by scope |
+| `/v1/forget` | POST | Bulk forget by scope (stub — not yet implemented) |
 | `/v1/maintenance` | POST | Trigger maintenance jobs |
 | `/v1/maintenance/compact` | POST | Compact a user's memories |
 | `/v1/profile/{cat}/{field}` | PUT | Update profile field |
