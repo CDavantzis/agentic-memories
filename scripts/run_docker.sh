@@ -499,12 +499,41 @@ echo ""
 echo -e "${GREEN}Running database migrations...${NC}"
 MIGRATE_DSN="postgresql://postgres:${POSTGRES_PASSWORD:-changeme}@localhost:5432/agentic_memories"
 if command -v psql >/dev/null 2>&1; then
+    set +e
     TIMESCALE_DSN="$MIGRATE_DSN" \
     CHROMA_HOST=localhost \
     CHROMA_PORT="${CHROMA_PORT:-8000}" \
     CHROMA_TENANT="${CHROMA_TENANT:-agentic-memories}" \
     CHROMA_DATABASE="${CHROMA_DATABASE:-memories}" \
         bash "$(dirname "$0")/../migrations/migrate.sh" up
+    migrate_exit=$?
+    set -e
+
+    if [ $migrate_exit -ne 0 ]; then
+        # Check if failure was due to a stale migration lock
+        lock_status=$(docker exec agentic-memories-timescaledb-1 \
+            psql -U postgres -d agentic_memories -t -A -c \
+            "SELECT locked FROM migration_lock WHERE id = 1;" 2>/dev/null || echo "unknown")
+
+        if [ "$lock_status" = "t" ]; then
+            echo -e "${YELLOW}Migration lock is stuck — force-releasing and retrying...${NC}"
+            docker exec agentic-memories-timescaledb-1 \
+                psql -U postgres -d agentic_memories -c \
+                "UPDATE migration_lock SET locked = FALSE, locked_by = NULL, locked_at = NULL, process_id = NULL WHERE id = 1;" \
+                >/dev/null 2>&1
+            echo -e "${GREEN}Lock released. Retrying migrations...${NC}"
+
+            TIMESCALE_DSN="$MIGRATE_DSN" \
+            CHROMA_HOST=localhost \
+            CHROMA_PORT="${CHROMA_PORT:-8000}" \
+            CHROMA_TENANT="${CHROMA_TENANT:-agentic-memories}" \
+            CHROMA_DATABASE="${CHROMA_DATABASE:-memories}" \
+                bash "$(dirname "$0")/../migrations/migrate.sh" up
+        else
+            echo -e "${RED}Migration failed (not a lock issue). See errors above.${NC}"
+            exit 1
+        fi
+    fi
 else
     echo -e "${YELLOW}Warning: psql not found — skipping auto-migrations.${NC}"
     echo -e "${YELLOW}Install psql to enable, or run manually: make migrate${NC}"
