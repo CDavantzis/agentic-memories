@@ -332,7 +332,9 @@ curl 'http://localhost:8080/v1/retrieve?user_id=user_123&query=cooking&limit=10'
 | `query` | string | optional | Search query (omit for all memories) |
 | `layer` | string | optional | Filter: `short-term`, `semantic`, `episodic`, `long-term` |
 | `type` | string | optional | Filter: `explicit` or `implicit` |
-| `limit` | int | 10 | Results per page |
+| `persona` | string | optional | Force persona: `finance`, `health`, `work`, etc. |
+| `sort` | string | optional | `newest` or `oldest` (by timestamp) |
+| `limit` | int | 50 | Results per page (max 1000) |
 | `offset` | int | 0 | Pagination offset |
 
 **Response:**
@@ -597,8 +599,8 @@ curl -X POST http://localhost:8080/v1/maintenance \
 You can also explicitly forget memories:
 
 ```bash
-# Forget all short-term memories for a user
-curl -X POST 'http://localhost:8080/v1/forget?user_id=user_123' \
+# Forget memories by scope (applies globally)
+curl -X POST http://localhost:8080/v1/forget \
   -H 'Content-Type: application/json' \
   -d '{"scopes": ["short-term"], "dry_run": false}'
 ```
