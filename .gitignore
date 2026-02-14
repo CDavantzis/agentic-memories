@@ -54,3 +54,12 @@ data-backup/
 # Node (if present)
 node_modules/
 migrations/.dbconfig
+
+# Common secret/certificate artifacts
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_dsa
+secrets.*
