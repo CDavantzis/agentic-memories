@@ -429,10 +429,10 @@ curl 'http://localhost:8080/v1/portfolio/summary?user_id=user_123'
 {
   "user_id": "user_123",
   "holdings": [
-    {"ticker": "NVDA", "shares": 50, "avg_price": 130.00},
-    {"ticker": "AAPL", "shares": 100, "avg_price": 175.00}
+    {"ticker": "NVDA", "shares": 50.0, "avg_price": 130.00, "asset_name": null, "first_acquired": null, "last_updated": null},
+    {"ticker": "AAPL", "shares": 100.0, "avg_price": 175.00, "asset_name": null, "first_acquired": null, "last_updated": null}
   ],
-  "total_holdings": 2
+  "total_holdings": 0
 }
 ```
 
@@ -561,7 +561,7 @@ curl -X POST http://localhost:8080/v1/retrieve \
   },
   "explainability": {
     "weights": {"semantic": 0.4, "temporal": 0.2, "importance": 0.3, "emotional": 0.1},
-    "source_links": [{"memory_id": "mem_005", "contribution": 0.45}]
+    "source_links": [{"id": "mem_005", "score": 0.92}]
   }
 }
 ```
