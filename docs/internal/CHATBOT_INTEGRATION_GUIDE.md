@@ -299,14 +299,14 @@ curl -X POST http://localhost:8080/v1/store \
 
 ### Storage comparison
 
-| | Orchestrator | Direct | Store |
+| | Orchestrator (recommended) | Direct | Store (legacy) |
 |---|---|---|---|
 | **Endpoint** | `POST /v1/orchestrator/message` | `POST /v1/memories/direct` | `POST /v1/store` |
 | **Latency** | ~1-3s | <3s | 10-60s |
-| **LLM extraction** | No | No | Yes (full pipeline) |
-| **Batching** | Automatic | N/A | N/A |
+| **LLM extraction** | Yes (full pipeline) | No | Yes (full pipeline) |
+| **Batching** | Adaptive throttling | N/A | None |
 | **Also retrieves** | Yes (returns injections) | No | No |
-| **Best for** | Real-time chat | Pre-formatted data | Bulk/historical import |
+| **Best for** | All use cases | Pre-formatted data | One-off backfill |
 
 ---
 
@@ -715,7 +715,7 @@ User: How's everything going?
 | `/v1/orchestrator/message` | POST | Stream chat turns (recommended) |
 | `/v1/orchestrator/transcript` | POST | Replay a full transcript |
 | `/v1/memories/direct` | POST | Store pre-formatted memories |
-| `/v1/store` | POST | Full LLM extraction pipeline |
+| `/v1/store` | POST | Legacy unthrottled ingestion (use orchestrator instead) |
 
 ### Retrieval
 
