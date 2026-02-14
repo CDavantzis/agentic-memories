@@ -1308,17 +1308,17 @@ docker compose logs -f api   # Follow API logs
 - [x] Portfolio summary endpoint
 - [x] Redis caching for short-term layer
 
-### 🚧 Phase 4: Advanced Cognitive Features (PARTIAL)
+### ✅ Phase 4: Advanced Cognitive Features (COMPLETE — advanced features upcoming)
 
 - [x] Episodic memory service
 - [x] Emotional memory service with pattern detection
 - [x] Procedural memory with skill progressions
 - [x] Portfolio service with intent detection
-- [ ] **Semantic memory service** (pending)
-- [ ] **Identity memory service** (pending)
+- [x] Emotional pattern predictions (service method implemented, API endpoint upcoming)
+- [x] Skill recommendations based on prerequisites (service method implemented, API endpoint upcoming)
+- [ ] **Semantic memory service** (pending — semantic memories stored via generic pipeline)
+- [ ] **Identity memory service** (pending — identity data lives in profile system)
 - [ ] **Graph retrieval using Neo4j** (pending)
-- [ ] **Emotional pattern predictions** (service exists, endpoint pending)
-- [ ] **Skill recommendations based on prerequisites** (pending)
 
 ### ✅ Phase 5: Memory Consolidation & Forgetting (COMPLETE — advanced features upcoming)
 
@@ -1326,26 +1326,31 @@ docker compose logs -f api   # Follow API logs
 - [x] **TTL-based forgetting** — Expired short-term cleanup (ChromaDB + TimescaleDB), low-importance episodic pruning (< 0.3, > 90 days), low-intensity emotional pruning (< 0.2, > 60 days)
 - [x] **Memory compression** — Clusters of 3-10 similar memories consolidated into single summaries
 - [x] **Deduplication** — Cosine-similarity dedup across ChromaDB, episodic, and emotional tables
-- [ ] **Scheduled consolidation** (currently manual trigger only, no nightly cron)
+- [x] **Scheduled consolidation** — APScheduler daily cron at 00:00 UTC + on-demand via `POST /v1/maintenance/compact`
 - [ ] **Ebbinghaus forgetting curves** (current decay is threshold-based, not exponential)
 - [ ] **Spaced repetition** for skill retention
 - [ ] **Continuous emotional decay** over time
 
-### 🚧 Phase 6: Narrative & Prediction (PARTIAL)
+### ✅ Phase 6: Narrative & Prediction (COMPLETE — advanced features upcoming)
 
-- [x] Basic narrative construction
-- [ ] **Gap-filling** with LLM inference
-- [ ] **Causal chain tracking** (triggered_by, led_to)
+- [x] Narrative construction with hybrid retrieval (`POST /v1/narrative`)
+- [x] Gap-filling with LLM inference (ReconstructionService fills gaps during narrative generation)
+- [x] Emotional pattern recognition (service method in EmotionalMemoryService)
+- [x] Causal chain schema (`triggered_by`, `led_to` fields in episodic memories)
+- [ ] **Causal relationship queries** (schema exists, no traversal API)
 - [ ] **Life story API** (complete narrative timeline)
 - [ ] **Predictive engine** (anticipate needs)
-- [ ] **Pattern recognition** (behavioral, emotional)
+- [ ] **Behavioral pattern recognition** (emotional patterns done, behavioral pending)
 
-### 🚧 Phase 7: Privacy & Security (PENDING)
+### 🚧 Phase 7: Privacy & Security (PARTIAL)
 
+- [x] **Memory deletion** — Cross-storage delete via `DELETE /v1/memories/{memory_id}` (ChromaDB + episodic + emotional + procedural)
+- [x] **Profile deletion** — `DELETE /v1/profile` with cascade across all profile tables
+- [x] **Portfolio deletion** — `DELETE /v1/portfolio` and `DELETE /v1/portfolio/holding/{ticker}`
+- [ ] **Memory edit endpoint** (view and delete exist, edit pending)
 - [ ] **Consent management system**
 - [ ] **Memory sensitivity scoring**
 - [ ] **Encryption for sensitive memories**
-- [ ] **User control endpoints** (view, edit, delete memories)
 - [ ] **Audit logs** for memory access
 - [ ] **GDPR compliance** (right to be forgotten)
 
@@ -1357,7 +1362,26 @@ docker compose logs -f api   # Follow API logs
 - [ ] **Social relationship graphs**
 - [ ] **Learning path recommendations**
 
-### ✅ Phase 9: Web UI (COMPLETE)
+### ✅ Phase 9: Profile & Persona Intelligence (COMPLETE)
+
+- [x] **Profile extraction** — Auto-populated from conversations during ingestion (27 fields, 8 categories)
+- [x] **Profile CRUD** — `GET /v1/profile`, `PUT /v1/profile/{category}/{field}`, `DELETE /v1/profile`
+- [x] **Profile completeness** — `GET /v1/profile/completeness` with populated/total field tracking
+- [x] **Persona-aware retrieval** — PersonaCoPilot with 8 personas (identity, relationships, health, finance, creativity, partner, guide, strategist)
+- [x] **Weighted retrieval** — Custom weight profiles per persona (semantic, temporal, importance, emotional)
+- [x] **Explainability** — Source links and applied weight profiles in persona retrieval responses
+
+### ✅ Phase 10: Orchestrator & Proactive Intelligence (COMPLETE)
+
+- [x] **Orchestrator message streaming** — `POST /v1/orchestrator/message` with adaptive throttling
+- [x] **Orchestrator retrieval** — `POST /v1/orchestrator/retrieve` for query-only retrieval
+- [x] **Transcript ingestion** — `POST /v1/orchestrator/transcript` for batch history replay
+- [x] **Memory injection** — Policy-gated injections per turn with similarity thresholds and cooldowns
+- [x] **Direct memory storage** — `POST /v1/memories/direct` for sub-3s typed storage (bypasses LLM pipeline)
+- [x] **Intents & scheduling** — Full CRUD for scheduled intents with cron, interval, and event-based triggers
+- [x] **Intent execution** — Claim, fire, cooldown logic, and execution history tracking
+
+### ✅ Phase 11: Web UI (COMPLETE)
 
 - [x] Memory browser with timeline
 - [x] Store interface for ingestion
@@ -1367,13 +1391,21 @@ docker compose logs -f api   # Follow API logs
 - [x] Responsive design with Tailwind CSS
 - [x] Playwright E2E tests
 
-### 🚧 Phase 10: Testing & Evaluation (PARTIAL)
+### ✅ Phase 12: CI/CD & DevOps (COMPLETE)
+
+- [x] **GitHub Actions CI** — Linting (ruff), unit + integration tests, Docker build + push
+- [x] **Secret scanning** — Gitleaks integration with allowlist configuration
+- [x] **Container registry** — Docker images pushed to GitHub Container Registry
+- [x] **Deployment pipeline** — `.github/workflows/deploy.yml`
+- [x] **Test reporting** — JUnit XML result reporting
+
+### ✅ Phase 13: Testing & Evaluation (COMPLETE — advanced features upcoming)
 
 - [x] Health check tests
 - [x] API integration tests
 - [x] E2E tests (Python + Playwright)
-- [ ] **LLM evaluation suite** (extraction quality)
-- [ ] **Retrieval evaluation** (relevance metrics)
+- [x] **LLM evaluation suite** — Extraction quality metrics (precision, recall, F1, calibration) in `tests/evals/`
+- [ ] **Retrieval evaluation** (relevance metrics, ranking quality)
 - [ ] **Performance benchmarks** (query latency)
 - [ ] **Load testing** (concurrent users)
 
@@ -1385,25 +1417,34 @@ docker compose logs -f api   # Follow API logs
 
 - ✅ Core infrastructure and database setup
 - ✅ Memory extraction pipeline (LangGraph)
-- ✅ Basic retrieval (semantic + hybrid)
-- ✅ Narrative construction
-- ✅ Portfolio tracking
+- ✅ Retrieval: semantic, hybrid, structured, persona-aware
+- ✅ Narrative construction with gap-filling
+- ✅ Portfolio tracking with full CRUD
 - ✅ Web UI
-- ✅ Profile extraction and management
-- ✅ Orchestrator with adaptive throttling
+- ✅ Profile extraction and management (27 fields, 8 categories)
+- ✅ Orchestrator with adaptive throttling and memory injection
+- ✅ Persona-aware retrieval (PersonaCoPilot with 8 personas)
+- ✅ Direct memory storage (sub-3s typed storage)
+- ✅ Intents & scheduled actions (cron, interval, event-based triggers)
+- ✅ Consolidation engine (LLM-powered clustering, TTL forgetting, deduplication)
+- ✅ Scheduled nightly compaction (APScheduler daily cron)
+- ✅ Emotional pattern detection
+- ✅ Skill recommendations based on prerequisites
+- ✅ LLM evaluation suite (extraction quality metrics)
+- ✅ Cross-storage memory deletion
 - ✅ CI/CD pipeline with secret scanning
 
 ### Planned
 
-- [ ] **Consolidation engine** - Nightly memory strengthening
-- [ ] **Forgetting mechanism** - Graceful decay with retention policies
 - [ ] **Neo4j integration** - Graph-based queries for relationships
-- [ ] **Semantic & Identity services** - Complete all memory layers
-- [ ] **Privacy controls** - Consent management and encryption
+- [ ] **Semantic & Identity services** - Dedicated services for these memory layers
+- [ ] **Privacy controls** - Consent management, encryption, sensitivity scoring
 - [ ] **Predictive intelligence** - Anticipate user needs
-- [ ] **Pattern recognition** - Behavioral and emotional patterns
-- [ ] **Advanced narrative** - Gap-filling and causal chains
-- [ ] **Performance optimization** - Sub-100ms simple queries
+- [ ] **Behavioral pattern recognition** - Complement existing emotional patterns
+- [ ] **Ebbinghaus forgetting curves** - Exponential decay (current: threshold-based)
+- [ ] **Causal relationship queries** - Traverse triggered_by/led_to chains
+- [ ] **Performance optimization** - Sub-100ms simple queries, retrieval benchmarks
+- [ ] **Load testing** - Concurrent user benchmarks
 
 ---
 
