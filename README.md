@@ -545,9 +545,23 @@ Extracts and stores memories from conversation history. Automatically detects me
 ```json
 {
   "memories_created": 2,
-  "ids": ["mem_abc", "mem_def"],
+  "ids": ["mem_abc123", "mem_def456"],
   "summary": "Stored: 1 episodic, 1 emotional.",
-  "memories": [...]
+  "memories": [
+    {
+      "content": "User bought 100 shares of AAPL at $175",
+      "layer": "semantic",
+      "type": "explicit",
+      "confidence": 0.95,
+      "metadata": {
+        "tags": ["investment", "stocks", "AAPL"],
+        "portfolio": "{\"ticker\":\"AAPL\",\"shares\":100,\"avg_price\":175.0,\"intent\":\"buy\"}"
+      }
+    }
+  ],
+  "duplicates_avoided": 0,
+  "updates_made": 0,
+  "existing_memories_checked": 12
 }
 ```
 
@@ -584,15 +598,34 @@ Fast semantic search using ChromaDB.
 {
   "results": [
     {
-      "id": "mem_xyz",
-      "content": "User bought 100 shares of AAPL at $175",
-      "score": 0.95,
-      "layer": "short-term",
+      "id": "mem_d477499c0106",
+      "content": "User likes spicy food.",
+      "layer": "semantic",
+      "type": "explicit",
+      "score": 0.87,
       "metadata": {
-        "portfolio": "{\"ticker\":\"AAPL\",\"shares\":100,...}"
-      }
+        "user_id": "user_123",
+        "layer": "semantic",
+        "type": "explicit",
+        "timestamp": "2025-12-22T22:44:07.249153+00:00",
+        "importance": 0.5,
+        "tags": ["preferences", "food"],
+        "confidence": 1.0,
+        "relevance_score": 0.0,
+        "usage_count": 0,
+        "persona_tags": []
+      },
+      "importance": 0.5,
+      "persona_tags": [],
+      "emotional_signature": null
     }
-  ]
+  ],
+  "pagination": {
+    "limit": 10,
+    "offset": 0,
+    "total": 1
+  },
+  "finance": null
 }
 ```
 
@@ -615,10 +648,60 @@ LLM-organized memory categorization.
 }
 ```
 
-**Response**: Memories categorized into:
-- `emotions`, `behaviors`, `personal`, `professional`
-- `habits`, `skills_tools`, `projects`, `relationships`
-- `learning_journal`, `finance`, `other`
+**Response**:
+```json
+{
+  "emotions": [
+    {
+      "id": "mem_e001",
+      "content": "User felt excited and proud after shipping their first API endpoint.",
+      "layer": "semantic",
+      "type": "explicit",
+      "score": 0.91,
+      "metadata": {"importance": 0.8, "tags": ["excitement", "achievement"]},
+      "importance": 0.8,
+      "persona_tags": ["career", "emotions"],
+      "emotional_signature": null
+    }
+  ],
+  "behaviors": [],
+  "personal": [],
+  "professional": [
+    {
+      "id": "mem_p001",
+      "content": "User is a Senior Software Engineer at Acme Corp, focusing on backend systems.",
+      "layer": "semantic",
+      "type": "explicit",
+      "score": 0.88,
+      "metadata": {"importance": 0.9, "tags": ["career", "engineering"]},
+      "importance": 0.9,
+      "persona_tags": ["career"],
+      "emotional_signature": null
+    }
+  ],
+  "habits": [],
+  "skills_tools": [
+    {
+      "id": "mem_s001",
+      "content": "Python:  (Context: Learning Python through FastAPI projects, intermediate level)",
+      "layer": "semantic",
+      "type": "explicit",
+      "score": 0.85,
+      "metadata": {"skill_name": "Python", "proficiency_level": "intermediate", "practice_count": 12},
+      "importance": null,
+      "persona_tags": null,
+      "emotional_signature": null
+    }
+  ],
+  "projects": [],
+  "relationships": [],
+  "learning_journal": [],
+  "other": [],
+  "finance": null
+}
+```
+
+Each category contains full `RetrieveItem` objects with scores, metadata, and persona tags. The LLM classifies each memory into the most appropriate category. Categories: `emotions`, `behaviors`, `personal`, `professional`, `habits`, `skills_tools`, `projects`, `relationships`, `learning_journal`, `other`, plus a `finance` aggregate from portfolio metadata.
 
 ---
 
@@ -645,10 +728,56 @@ Generates coherent life stories using **hybrid retrieval** (ChromaDB + Timescale
 ```json
 {
   "user_id": "user_123",
-  "narrative": "In Q1 2025, the user focused on...",
-  "summary": "Key themes: career growth, learning Python",
+  "narrative": "In early January you dove into Python, starting with a FastAPI tutorial that quickly turned into a full project. By mid-month you had your first working endpoint, and the excitement carried over into a weekend hackathon where you built a simple portfolio tracker. The learning curve was steep but rewarding — your journal entries from that period show a mix of frustration with async patterns and genuine delight when things clicked. By February you were refactoring confidently and exploring deployment options.",
+  "summary": "Key themes: rapid Python learning via FastAPI project, portfolio tracker hackathon, growing confidence with async patterns and deployment.",
   "sources": [
-    {"id": "mem_abc", "content": "...", "type": "episodic"}
+    {
+      "id": "mem_abc123",
+      "type": "semantic",
+      "content": "User started learning Python through a FastAPI tutorial project.",
+      "meta": {
+        "layer": "episodic",
+        "confidence": 0.9,
+        "relevance_score": 0.85,
+        "source": "direct_api",
+        "importance": 0.85,
+        "conversation_id": "conv_1abf23040f40",
+        "mood": "curious",
+        "persona_tags": ["conversation_summary", "learning", "python"],
+        "type": "explicit",
+        "typed_table_id": "e4257758-b09f-4890-93b0-e5e2f31a4b3f",
+        "category": "learning",
+        "stored_in_episodic": true,
+        "stored_in_emotional": true,
+        "stored_in_procedural": false,
+        "timestamp": "2025-01-10T08:30:00.000000+00:00",
+        "user_id": "user_123",
+        "topics": ["python", "fastapi", "learning"],
+        "message_count": 24,
+        "has_unresolved": false
+      }
+    },
+    {
+      "id": "mem_def456",
+      "type": "semantic",
+      "content": "User built a portfolio tracker during a weekend hackathon, expressing excitement about the project.",
+      "meta": {
+        "layer": "episodic",
+        "confidence": 0.9,
+        "relevance_score": 0.8,
+        "source": "direct_api",
+        "importance": 0.9,
+        "mood": "excited",
+        "persona_tags": ["conversation_summary", "project", "hackathon"],
+        "type": "explicit",
+        "category": "project",
+        "stored_in_episodic": true,
+        "stored_in_emotional": true,
+        "timestamp": "2025-01-18T14:00:00.000000+00:00",
+        "user_id": "user_123",
+        "topics": ["hackathon", "portfolio", "python"]
+      }
+    }
   ]
 }
 ```
@@ -696,15 +825,15 @@ Structured portfolio data from PostgreSQL (with ChromaDB fallback).
 
 Profile CRUD APIs provide read and write access to user profile data extracted from conversations. Profiles are automatically populated during ingestion and can be manually edited via these endpoints.
 
-**Profile Categories**:
-- `basics`: name, birthday, location, occupation, family_status
-- `preferences`: communication_style, food_preferences, love_language, gift_preferences
-- `goals`: short_term, long_term, bucket_list
-- `interests`: hobbies, learning_areas, favorite_topics
-- `background`: skills, education_history, work_history, current_employer
-- `health`: allergies, dietary_needs
-- `personality`: personality_type, stress_response, social_battery
-- `values`: life_values, philanthropy, spiritual_alignment
+**Profile Categories** (27 baseline fields, extensible — the system auto-discovers new fields from conversations):
+- `basics`: name, birthday, location, occupation, family_status, spouse, children, ...
+- `preferences`: communication_style, food_preferences, dietary_restrictions, sleep_schedule, investing_style, risk_tolerance, ...
+- `goals`: short_term, long_term, current_focus, financial_goals, aspirations, ...
+- `interests`: hobbies, learning_areas, favorite_topics, music_taste, passions, ...
+- `background`: skills, education_history, work_history, current_employer, cultural_background, achievements, ...
+- `health`: allergies, dietary_needs, clothing_sizes, vision_correction, ...
+- `personality`: strengths, conflict_style, personality_type, stress_response, ...
+- `values`: life_values, spiritual_alignment, philanthropy, ...
 
 ##### GET /v1/profile - Get Complete Profile
 
@@ -721,25 +850,53 @@ Returns complete user profile with all categories and confidence scores.
 ```json
 {
   "user_id": "user_123",
-  "completeness_pct": 33.33,
-  "populated_fields": 9,
+  "completeness_pct": 74.07,
+  "populated_fields": 20,
   "total_fields": 27,
-  "last_updated": "2025-11-17T10:30:45.123456+00:00",
+  "last_updated": "2025-12-22T22:44:07.249153+00:00",
   "created_at": "2025-11-17T10:25:12.654321+00:00",
   "profile": {
     "basics": {
       "name": {"value": "Sarah Martinez", "last_updated": "2025-11-17T10:30:45+00:00"},
-      "age": {"value": 28, "last_updated": "2025-11-17T10:30:45+00:00"},
-      "occupation": {"value": "software engineer", "last_updated": "2025-11-17T10:30:45+00:00"}
+      "birthday": {"value": "March 15", "last_updated": "2025-12-01T09:00:00+00:00"},
+      "location": {"value": "San Francisco, CA", "last_updated": "2025-12-10T14:22:00+00:00"},
+      "occupation": {"value": "Senior Software Engineer at Acme Corp", "last_updated": "2025-12-15T08:00:00+00:00"},
+      "family_status": {"value": "married", "last_updated": "2025-11-20T12:00:00+00:00"},
+      "spouse": {"value": {"name": "Alex", "nickname": null}, "last_updated": "2025-11-20T12:00:00+00:00"}
     },
     "preferences": {
-      "communication_style": {"value": "direct", "last_updated": "2025-11-17T10:30:45+00:00"}
+      "communication_style": {"value": "Prefers analytical, concise explanations", "last_updated": "2025-12-05T16:30:00+00:00"},
+      "food_preferences": {"value": ["Italian", "Japanese"], "last_updated": "2025-12-08T19:00:00+00:00"},
+      "dietary_restrictions": {"value": "vegetarian", "last_updated": "2025-12-08T19:00:00+00:00"},
+      "sleep_schedule": {"value": "night owl (often active around 1-2am)", "last_updated": "2025-12-20T02:00:00+00:00"}
     },
     "goals": {
-      "short_term": {"value": "complete ML certification within 6 months", "last_updated": "2025-11-17T10:30:45+00:00"}
+      "short_term": {"value": "Complete ML certification within 6 months", "last_updated": "2025-11-17T10:30:45+00:00"},
+      "long_term": {"value": "Transition into AI research", "last_updated": "2025-12-01T09:00:00+00:00"},
+      "current_focus": {"value": "Building a personal AI assistant project", "last_updated": "2025-12-15T08:00:00+00:00"}
     },
-    "interests": {},
-    "background": {}
+    "interests": {
+      "hobbies": {"value": ["rock climbing", "journaling"], "last_updated": "2025-12-10T14:22:00+00:00"},
+      "favorite_topics": {"value": ["AI", "cognitive science"], "last_updated": "2025-12-18T11:00:00+00:00"},
+      "learning_areas": {"value": ["Python", "LangChain"], "last_updated": "2025-12-15T08:00:00+00:00"}
+    },
+    "background": {
+      "skills": {"value": ["Backend Engineering", "Python", "Docker"], "last_updated": "2025-12-15T08:00:00+00:00"},
+      "current_employer": {"value": "Acme Corp", "last_updated": "2025-12-15T08:00:00+00:00"},
+      "education_history": {"value": "MS Computer Science, Stanford", "last_updated": "2025-11-25T10:00:00+00:00"}
+    },
+    "health": {
+      "dietary_needs": {"value": "Vegetarian (eats eggs). Favorites: pasta, sushi.", "last_updated": "2025-12-08T19:00:00+00:00"},
+      "allergies": {"value": [], "last_updated": "2025-12-08T19:00:00+00:00"}
+    },
+    "personality": {
+      "strengths": {"value": ["Builder mindset", "detail-oriented"], "last_updated": "2025-12-12T09:00:00+00:00"},
+      "conflict_style": {"value": "Seeks rapid resolution; prefers direct conversation", "last_updated": "2025-12-14T20:00:00+00:00"}
+    },
+    "values": {
+      "life_values": {"value": "Emphasizes learning by doing over theoretical study", "last_updated": "2025-12-18T11:00:00+00:00"},
+      "spiritual_alignment": {"value": "Secular humanist", "last_updated": "2025-12-01T09:00:00+00:00"}
+    }
   }
 }
 ```
