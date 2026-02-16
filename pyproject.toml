@@ -31,11 +31,14 @@ dependencies = [
 [dependency-groups]
 dev = [
   "ruff~=0.15.0",
-  "pytest==8.3.2",
   "debugpy==1.8.0",
+]
+test = [
+  "pytest==8.3.2",
 ]
 
 [tool.uv]
+default-groups = ["dev", "test"]
 package = false
 
 [tool.ruff]
