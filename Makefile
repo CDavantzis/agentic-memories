@@ -1,6 +1,6 @@
 # Makefile for agentic-memories
 
-.PHONY: help install venv test test-unit test-integration test-e2e test-all test-fast test-intents test-intents-e2e test-memory test-profile test-coverage start stop clean clean-all lint format logs docker-logs docker-shell docker-test gh gh-read gh-diff gh-download gh-upload gh-write migrate
+.PHONY: help install .venv/bin/activate venv test test-unit test-integration test-e2e test-all test-fast test-intents test-intents-e2e test-memory test-profile test-coverage start stop clean clean-all lint format logs docker-logs docker-shell docker-test gh gh-read gh-diff gh-download gh-upload gh-write migrate requirements.txt
 
 # Detect uv or fallback to pip
 UV_AVAILABLE := $(shell command -v uv 2>/dev/null)
@@ -68,15 +68,18 @@ clean-all: clean ## Clean everything including venv
 # Activate venv for all test commands
 VENV := . .venv/bin/activate &&
 
+requirements.txt:
+	@uv export --no-dev --no-hashes --format requirements.txt --output-file requirements.txt
+
 # Ensure venv exists and dependencies are installed
-.venv/bin/activate: requirements.txt
+.venv/bin/activate:
 ifdef UV_AVAILABLE
 	@if [ ! -d ".venv" ]; then \
 		echo "Creating virtual environment with uv (Python $(PYTHON_VERSION))..."; \
 		uv venv --python $(PYTHON_VERSION); \
 	fi
 	@echo "Installing dependencies with uv..."
-	@uv pip install -q -r requirements.txt
+	@uv sync
 else
 	@echo "uv not found, using pip (install uv for faster installs: curl -LsSf https://astral.sh/uv/install.sh | sh)"
 	@if [ ! -d ".venv" ]; then \
